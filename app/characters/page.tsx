@@ -44,15 +44,26 @@ export default function CharacterListPage() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4">
-            {characters.map((character) => (
+            {characters.map((character) => {
+              const thumb = character.images?.neutral || character.images?.happy;
+              return (
               <Link key={character.id} href={`/characters/${character.id}`}>
                 <Card className="overflow-hidden hover:shadow-lg transition-shadow">
                   <div className="aspect-square bg-secondary relative">
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-4xl text-muted-foreground">
-                        {character.name.charAt(0)}
-                      </span>
-                    </div>
+                    {thumb ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={thumb}
+                        alt={character.name}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-4xl text-muted-foreground">
+                          {character.name.charAt(0)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="p-3">
                     <h3 className="font-medium text-foreground truncate">
@@ -67,7 +78,8 @@ export default function CharacterListPage() {
                   </div>
                 </Card>
               </Link>
-            ))}
+              );
+            })}
 
             {/* Add New Card */}
             <Link href="/characters/new">

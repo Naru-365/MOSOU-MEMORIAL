@@ -6,6 +6,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  outputFileTracingIncludes: {
+    '/api/chat': ['./prompts/**/*.md'],
+  },
 }
 
 export default nextConfig

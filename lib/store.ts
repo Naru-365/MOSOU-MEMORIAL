@@ -2,12 +2,12 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Character, GameState, Message } from './types';
+import type { Character, GameState, Message, Emotion, CharacterImages } from './types';
 
 interface AppState {
   // Characters
   characters: Character[];
-  addCharacter: (character: Omit<Character, 'id' | 'createdAt' | 'updatedAt' | 'imageUrl'>) => Character;
+  addCharacter: (character: Omit<Character, 'id' | 'createdAt' | 'updatedAt' | 'images'> & { images?: CharacterImages }) => Character;
   updateCharacter: (id: string, updates: Partial<Character>) => void;
   deleteCharacter: (id: string) => void;
   getCharacter: (id: string) => Character | undefined;
@@ -17,6 +17,7 @@ interface AppState {
   setCurrentCharacter: (characterId: string | null) => void;
   updateAffinity: (change: number) => void;
   updateJealousy: (change: number) => void;
+  setCurrentEmotion: (emotion: Emotion) => void;
   addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void;
   clearMessages: () => void;
   resetGameState: () => void;
@@ -27,21 +28,12 @@ interface AppState {
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
-const getImageUrl = (appearance: string): string => {
-  // Placeholder images based on appearance type
-  const appearanceMap: Record<string, string> = {
-    '清楚系': '/images/characters/seiso.png',
-    'ギャル系': '/images/characters/gal.png',
-    'ナチュラル': '/images/characters/natural.png',
-  };
-  return appearanceMap[appearance] || '/images/characters/default.png';
-};
-
 const initialGameState: GameState = {
   affinity: 50,
   jealousy: 0,
   currentCharacterId: null,
   messages: [],
+  currentEmotion: 'neutral',
 };
 
 export const useAppStore = create<AppState>()(
@@ -52,8 +44,10 @@ export const useAppStore = create<AppState>()(
       addCharacter: (characterData) => {
         const newCharacter: Character = {
           id: generateId(),
-          ...characterData,
-          imageUrl: getImageUrl(characterData.appearance),
+          name: characterData.name,
+          personality: characterData.personality,
+          appearance: characterData.appearance,
+          images: characterData.images ?? {},
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
@@ -70,7 +64,6 @@ export const useAppStore = create<AppState>()(
               ? {
                   ...char,
                   ...updates,
-                  imageUrl: updates.appearance ? getImageUrl(updates.appearance) : char.imageUrl,
                   updatedAt: Date.now(),
                 }
               : char
@@ -95,7 +88,7 @@ export const useAppStore = create<AppState>()(
       gameState: initialGameState,
 
       setCurrentCharacter: (characterId) => {
-        set((state) => ({
+        set(() => ({
           gameState: {
             ...initialGameState,
             currentCharacterId: characterId,
@@ -117,6 +110,15 @@ export const useAppStore = create<AppState>()(
           gameState: {
             ...state.gameState,
             jealousy: Math.max(0, Math.min(100, state.gameState.jealousy + change)),
+          },
+        }));
+      },
+
+      setCurrentEmotion: (emotion) => {
+        set((state) => ({
+          gameState: {
+            ...state.gameState,
+            currentEmotion: emotion,
           },
         }));
       },

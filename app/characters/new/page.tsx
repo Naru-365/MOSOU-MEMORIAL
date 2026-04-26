@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, User } from 'lucide-react';
+import { X } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAppStore } from '@/lib/store';
-import type { Character } from '@/lib/types';
+import type { Character, CharacterImages } from '@/lib/types';
+import { CharacterImageUploader } from '@/components/character-image-uploader';
 
 const personalities: Character['personality'][] = ['優しい', 'クール', 'ツンデレ'];
 const appearances: Character['appearance'][] = ['清楚系', 'ギャル系', 'ナチュラル'];
@@ -27,6 +28,7 @@ export default function CharacterCreatePage() {
   const [name, setName] = useState('');
   const [personality, setPersonality] = useState<Character['personality']>('優しい');
   const [appearance, setAppearance] = useState<Character['appearance']>('清楚系');
+  const [images, setImages] = useState<CharacterImages>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -39,6 +41,7 @@ export default function CharacterCreatePage() {
       name: name.trim(),
       personality,
       appearance,
+      images,
     });
 
     router.push(`/characters/${newCharacter.id}`);
@@ -63,12 +66,8 @@ export default function CharacterCreatePage() {
       {/* Form */}
       <main className="px-4 py-6 max-w-md mx-auto">
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-          {/* Image Placeholder */}
-          <div className="flex justify-center">
-            <div className="w-32 h-32 rounded-full bg-secondary flex items-center justify-center">
-              <User className="w-16 h-16 text-muted-foreground" />
-            </div>
-          </div>
+          {/* Image uploader */}
+          <CharacterImageUploader value={images} onChange={setImages} />
 
           {/* Name */}
           <div className="flex flex-col gap-2">
