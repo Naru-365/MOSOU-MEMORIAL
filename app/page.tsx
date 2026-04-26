@@ -31,9 +31,14 @@ export default function TitleScreen() {
       <div className="flex flex-col items-center gap-8 text-center">
         {/* Title */}
         <div className="flex flex-col items-center gap-2">
-          <h1 className="text-4xl font-bold text-accent tracking-wider">
-            妄想メモリアル
-          </h1>
+          <div className="relative">
+            <h1 className="text-4xl font-bold text-accent tracking-wider">
+              妄想メモリアル
+            </h1>
+            <span className="absolute -top-2 -right-8 text-[10px] font-semibold tracking-widest text-primary-foreground bg-primary px-2 py-0.5 rounded-full">
+              BETA
+            </span>
+          </div>
           <p className="text-lg text-muted-foreground tracking-widest">
             MOSOU MEMORIAL
           </p>
