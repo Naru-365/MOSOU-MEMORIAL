@@ -61,5 +61,5 @@ export function getInterrupterAsset(
 export type SceneKey = 'school' | 'night_park';
 
 export function getBackgroundAsset(scene: SceneKey = 'school'): string {
-  return `/images/backgrounds/${scene}.jpg`;
+  return `/images/backgrounds/${scene}.png`;
 }
