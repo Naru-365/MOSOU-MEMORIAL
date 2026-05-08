@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>妄想メモリアル — 開発状況・遊び方</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0f0f12;
+    --bg-card: #1a1a20;
+    --bg-soft: #25252d;
+    --fg: #e8e8ec;
+    --fg-mute: #9a9aa3;
+    --fg-dim: #6a6a73;
+    --accent: #f59ec2;
+    --accent-2: #b39ddb;
+    --good: #7dd3a0;
+    --warn: #f5d680;
+    --bad: #f59c9c;
+    --border: #2e2e38;
+    --code-bg: #0a0a0d;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #faf8f7;
+      --bg-card: #ffffff;
+      --bg-soft: #f0eeed;
+      --fg: #1a1a1f;
+      --fg-mute: #555560;
+      --fg-dim: #888893;
+      --accent: #d4639a;
+      --accent-2: #7c5fb8;
+      --good: #3aa269;
+      --warn: #c79a30;
+      --bad: #c44d4d;
+      --border: #e2dfdc;
+      --code-bg: #f4f1ef;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
+      "Noto Sans JP", "Yu Gothic", Meiryo, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.7;
+    font-size: 16px;
+    padding: 0 0 80px 0;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+  header.hero {
+    padding: 32px 20px 24px;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent-2) 12%, transparent));
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .hero-inner {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    margin: 0 0 6px;
+  }
+  .subtitle {
+    color: var(--fg-mute);
+    font-size: 14px;
+    letter-spacing: 0.15em;
+    margin: 0 0 16px;
+  }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+  .badge.good { color: var(--good); border-color: color-mix(in srgb, var(--good) 50%, var(--border)); }
+  .badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--border)); }
+  .badge.bad  { color: var(--bad);  border-color: color-mix(in srgb, var(--bad) 50%, var(--border)); }
+
+  h2 {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 32px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 20px 0 8px;
+    color: var(--fg);
+  }
+  h4 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 14px 0 6px;
+    color: var(--fg-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  p { margin: 8px 0; }
+  ul, ol { padding-left: 22px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--code-bg);
+    color: var(--fg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  pre code { background: transparent; padding: 0; }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 10px 0;
+  }
+  .card h3 { margin-top: 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    font-weight: 700;
+    background: var(--bg-soft);
+    color: var(--fg-mute);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  @media (min-width: 640px) {
+    .grid2 { grid-template-columns: 1fr 1fr; }
+  }
+
+  .kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--bg-soft);
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+  }
+
+  .toc {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 10px 0 24px;
+    font-size: 14px;
+  }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ol { margin: 4px 0; padding-left: 22px; }
+
+  .step {
+    counter-reset: step;
+    list-style: none;
+    padding-left: 0;
+  }
+  .step > li {
+    position: relative;
+    padding: 10px 12px 10px 44px;
+    border-radius: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    margin: 8px 0;
+    counter-increment: step;
+  }
+  .step > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 800;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 28px 0;
+  }
+
+  .muted { color: var(--fg-mute); }
+  .small { font-size: 13px; }
+  .center { text-align: center; }
+
+  .emoji {
+    font-style: normal;
+    margin-right: 4px;
+  }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <h1 class="title">妄想メモリアル <span class="muted" style="font-size:14px; font-weight:600; letter-spacing:0.2em;">BETA</span></h1>
+    <p class="subtitle">MOSOU MEMORIAL — 開発状況・実装機能・遊び方</p>
+    <div class="badges">
+      <span class="badge good">PoC稼働中</span>
+      <span class="badge good">Gemini接続済</span>
+      <span class="badge warn">UIは仮置き</span>
+      <span class="badge warn">画像 13/16 配置</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section class="toc">
+  <strong>目次</strong>
+  <ol>
+    <li><a href="#overview">プロジェクト概要</a></li>
+    <li><a href="#status">現在の開発状況</a></li>
+    <li><a href="#features">実装されている機能</a></li>
+    <li><a href="#assets">アセット配置状況</a></li>
+    <li><a href="#play">デモの遊び方</a></li>
+    <li><a href="#tech">技術スタック</a></li>
+    <li><a href="#roadmap">今後の予定</a></li>
+    <li><a href="#limitations">既知の制約・注意</a></li>
+  </ol>
+</section>
+
+<h2 id="overview">1. プロジェクト概要</h2>
+<p>
+  「妄想メモリアル（妄メモ）」は、<strong>実写風キャラクターと自由会話できる、ギャグ寄りの恋愛シミュレーションPoC</strong>です。
+  ベタな恋愛ゲームではなく、<em>会話の合間に「邪魔者キャラ」が乱入してきてカオスに展開する</em>のが核のアイデア。
+</p>
+<p>
+  リファレンスはひろちんくんの実況動画的な「実写×カオス」のノリ。恋愛要素は薄め、ギャグ要素強めで大衆向けに振ってあります。
+</p>
+
+<div class="card">
+  <h3>このPoCで検証したいこと</h3>
+  <ul>
+    <li>実写風画像で「妄想会話」のノリが成立するか</li>
+    <li>邪魔者の「乱入頻度」と「セリフのキャラ立ち」のチューニング感</li>
+    <li>Gemini APIで「セリフ生成」と「好感度ジャッジ」を1コールで賄えるか</li>
+    <li>ボケ／ツッコミ／不条理 のギャグ枠で大衆向けトーンが作れるか</li>
+  </ul>
+</div>
+
+<h2 id="status">2. 現在の開発状況</h2>
+
+<table>
+  <thead><tr><th>領域</th><th>状態</th><th>メモ</th></tr></thead>
+  <tbody>
+    <tr><td>ロジック層</td><td><span class="badge good">完成</span></td><td>キャラ／邪魔者／好感度／嫉妬度／トリガ／テンプレ全て実装済み</td></tr>
+    <tr><td>Gemini会話</td><td><span class="badge good">完成</span></td><td><code>gemini-2.5-flash</code> + Structured JSON Output で動作中</td></tr>
+    <tr><td>画像（清楚系）</td><td><span class="badge warn">5/8</span></td><td>angry / surprised / laugh が未着、フォールバックで動作</td></tr>
+    <tr><td>画像（邪魔者ツッコミ部長）</td><td><span class="badge good">3/3</span></td><td>intro / peeved / smug 揃い</td></tr>
+    <tr><td>画像（邪魔者 夜々子・メタくん）</td><td><span class="badge bad">0/6</span></td><td>未生成、デフォルトアイコンで代替</td></tr>
+    <tr><td>背景</td><td><span class="badge good">2/2</span></td><td>school / night_park 揃い（現状チャット画面では未使用）</td></tr>
+    <tr><td>UI</td><td><span class="badge warn">仮置き</span></td><td>Claude design / v0 で差し替え予定。ロジック側は触らずUIだけ刷新可能な構造</td></tr>
+    <tr><td>動画モード</td><td><span class="badge bad">未実装</span></td><td>抽象だけ用意済み（<code>AssetMode = 'image' | 'video' | '3d'</code>）</td></tr>
+    <tr><td>3Dモード</td><td><span class="badge bad">未実装</span></td><td>同上、Phase 3 想定</td></tr>
+  </tbody>
+</table>
+
+<p class="small muted">
+  方針メモ: <code>docs/feasibility-memo.md</code> ／ 画像生成プロンプト: <code>docs/poc-image-prompts.md</code>
+</p>
+
+<h2 id="features">3. 実装されている機能</h2>
+
+<div class="grid2">
+
+  <div class="card">
+    <h3><span class="emoji">👤</span>キャラクター管理</h3>
+    <ul>
+      <li>名前・性格（優しい／クール／ツンデレ）・見た目（清楚系／ギャル系／ナチュラル）</li>
+      <li>一覧 / 新規作成 / 編集 / 削除</li>
+      <li>削除時にチャット中のキャラなら状態リセット</li>
+    </ul>
+    <p class="small muted">画面: <code>/characters</code></p>
+  </div>
+
+  <div class="card">
+    <h3><span class="emoji">👁️‍🗨️</span>邪魔者CRUD</h3>
+    <ul>
+      <li>名前・タイプ（ツッコミ／束縛／メタ／カスタム）・説明</li>
+      <li>メッセージテンプレ複数行（<code>{char}</code> <code>{user}</code> <code>{topic}</code> スロット対応）</li>
+      <li>有効化トグル、出現確率スライダー</li>
+      <li>デフォルト3体プリセット、リセットボタンあり</li>
+    </ul>
+    <p class="small muted">画面: <code>/interrupters</code></p>
+  </div>
+
+  <div class="card">
+    <h3><span class="emoji">🎯</span>複合トリガ</h3>
+    <p>邪魔者ごとに <strong>OR条件</strong>で発火条件を設定可能：</p>
+    <ul>
+      <li>嫉妬度しきい値 (<code>≥ N</code>)</li>
+      <li>Nターンごとの周期</li>
+      <li>キーワード一致（「好き」「デート」など）</li>
+      <li>↑ いずれかが成立した上で出現確率ロール</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3><span class="emoji">💬</span>Gemini自由会話</h3>
+    <ul>
+      <li>自由テキスト入力でヒロインと会話</li>
+      <li>好感度・嫉妬度はGeminiがユーザーの発言内容で判定</li>
+      <li>邪魔者乱入時もGeminiが乱入セリフを生成</li>
+      <li>1リクエストで <code>{reply, affinityChange, jealousyChange, emotion}</code> を取得</li>
+      <li>サーバ側でクランプ <code>[-15, +15]</code></li>
+    </ul>
+    <p class="small muted">エンドポイント: <code>POST /api/chat</code> ／ モデル: <code>gemini-2.5-flash</code></p>
+  </div>
+
+  <div class="card">
+    <h3><span class="emoji">😊</span>動的表情</h3>
+    <ul>
+      <li>Geminiが返す emotion でキャラ画像が即座に切り替わる</li>
+      <li>8表情対応: <code>neutral / happy / tsun / blush / angry / surprised / laugh / sad</code></li>
+      <li>画像未配置時は名前イニシャル円にフォールバック（壊れない）</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3><span class="emoji">⚙️</span>設定</h3>
+    <ul>
+      <li>プレイヤー名（ヒロインのセリフの <code>{user}</code> に差し込み）</li>
+      <li>邪魔者管理ページへのリンク</li>
+      <li>ゲームのみリセット ／ 全データリセット</li>
+    </ul>
+    <p class="small muted">画面: <code>/settings</code></p>
+  </div>
+
+  <div class="card">
+    <h3><span class="emoji">🎨</span>アセット解決抽象化</h3>
+    <p>
+      <code>getCharacterAsset(character, emotion, mode)</code> が
+      <code>image | video | 3d</code> の3モードを単一APIで解決。
+      画像が来たらフォルダにドロップするだけで動く。
+    </p>
+    <pre><code>/images/characters/seiso/happy.png
+/images/characters/seiso/angry.png
+/images/interrupters/tsukkomi/intro.png</code></pre>
+  </div>
+
+  <div class="card">
+    <h3><span class="emoji">💾</span>永続化</h3>
+    <ul>
+      <li>Zustand persist（localStorage）</li>
+      <li>v2マイグレーション付き、古いキャッシュも壊れずアップグレード</li>
+      <li>「全データリセット」で完全初期化可能</li>
+    </ul>
+  </div>
+
+</div>
+
+<h2 id="assets">4. アセット配置状況</h2>
+
+<table>
+  <thead><tr><th>カテゴリ</th><th>表情/シーン</th><th>状態</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="8">ヒロイン（清楚系）</td><td><code>neutral</code></td><td><span class="badge good">配置済</span></td></tr>
+    <tr><td><code>happy</code></td><td><span class="badge good">配置済</span></td></tr>
+    <tr><td><code>tsun</code></td><td><span class="badge good">配置済</span></td></tr>
+    <tr><td><code>blush</code></td><td><span class="badge good">配置済</span></td></tr>
+    <tr><td><code>sad</code></td><td><span class="badge good">配置済</span></td></tr>
+    <tr><td><code>angry</code></td><td><span class="badge warn">未配置</span></td></tr>
+    <tr><td><code>surprised</code></td><td><span class="badge warn">未配置</span></td></tr>
+    <tr><td><code>laugh</code></td><td><span class="badge warn">未配置</span></td></tr>
+    <tr><td rowspan="3">邪魔者ツッコミ部長</td><td><code>intro</code></td><td><span class="badge good">配置済</span></td></tr>
+    <tr><td><code>peeved</code></td><td><span class="badge good">配置済</span></td></tr>
+    <tr><td><code>smug</code></td><td><span class="badge good">配置済</span></td></tr>
+    <tr><td colspan="2">邪魔者 夜々子（束縛系）3表情</td><td><span class="badge bad">未生成</span></td></tr>
+    <tr><td colspan="2">邪魔者 メタくん（メタ系）3表情</td><td><span class="badge bad">未生成</span></td></tr>
+    <tr><td rowspan="2">背景</td><td><code>school</code></td><td><span class="badge good">配置済</span></td></tr>
+    <tr><td><code>night_park</code></td><td><span class="badge good">配置済</span></td></tr>
+  </tbody>
+</table>
+
+<p class="small muted">
+  画像が無い表情・キャラはフォールバックUIに切り替わるため、ゲーム自体は止まりません。
+</p>
+
+<h2 id="play">5. デモの遊び方</h2>
+
+<p>所要時間：5〜10分</p>
+
+<ol class="step">
+  <li>
+    <strong>初回アクセス時の注意</strong><br>
+    古い保存データが残ってる可能性があるので、最初に <code>設定 → すべてのデータをリセット</code> を一度押すと安全です。
+  </li>
+  <li>
+    <strong>タイトル画面 → 「はじめる」</strong><br>
+    桜色のボタンをタップ。
+  </li>
+  <li>
+    <strong>キャラクターを作成</strong><br>
+    右上の <span class="kbd">＋</span> から新規作成。<br>
+    例：名前「ことね」／ 性格「ツンデレ」／ 見た目「<strong>清楚系</strong>」（画像が用意されてるのは清楚系のみ）。
+  </li>
+  <li>
+    <strong>「チャットを始める」</strong><br>
+    キャラ詳細画面の桃色ボタンから。
+  </li>
+  <li>
+    <strong>自由テキストで話しかけてみる</strong><br>
+    例：「はじめまして」「今日いい天気だね」「好きな食べ物は？」など。<br>
+    1〜3秒の「考え中…」のあと、ヒロインが返事をします（Geminiが性格・好感度に応じて生成）。
+    返事と同時にヘッダー横の好感度（💖）が動きます。
+  </li>
+  <li>
+    <strong>表情の切り替わりに注目</strong><br>
+    優しい言葉を続けると好感度が上がり、キャラが <code>happy</code> や <code>blush</code> に。<br>
+    冷たく扱うと <code>tsun</code> や <code>sad</code> に。
+  </li>
+  <li>
+    <strong>邪魔者乱入を観察</strong><br>
+    会話を続けると（特に「好き」「デート」などのキーワードや、嫉妬度が50超えた時に）、
+    赤い吹き出しで <strong>「邪魔キャラ乱入!」</strong> が割り込みます。<br>
+    そのまま自由テキストで邪魔者にも返答できます。
+  </li>
+  <li>
+    <strong>邪魔者をカスタマイズ</strong><br>
+    <code>設定 → 邪魔者を管理</code> から、出現確率・キーワード・セリフテンプレを編集できます。<br>
+    新しい邪魔者を作ることもできます。
+  </li>
+  <li>
+    <strong>プレイヤー名を設定</strong><br>
+    <code>設定 → プレイヤー名</code> に名前を入れると、ヒロインのセリフ中の <code>{user}</code> がその名前に差し変わります。
+  </li>
+</ol>
+
+<div class="card">
+  <h3>触ってほしいポイント</h3>
+  <ul>
+    <li>セリフの<strong>トーン</strong>：性格別の喋り分けが効いてるか、ギャグ寄りに振れてるか</li>
+    <li>好感度の<strong>動き方</strong>：あなたの発言の良し悪しを適切に拾えてるか</li>
+    <li>邪魔者の<strong>頻度感</strong>：多すぎ／少なすぎないか（編集で調整可）</li>
+    <li>表情の<strong>切替タイミング</strong>：違和感ないか</li>
+    <li>レイテンシ：1〜2秒の待ちが許容できるか</li>
+  </ul>
+</div>
+
+<h2 id="tech">6. 技術スタック</h2>
+
+<table>
+  <thead><tr><th>層</th><th>採用</th><th>備考</th></tr></thead>
+  <tbody>
+    <tr><td>フレームワーク</td><td>Next.js 16 (Turbopack)</td><td>App Router、Route Handler で API実装</td></tr>
+    <tr><td>UI</td><td>React 19 + Tailwind v4</td><td>Radix UI コンポーネント、shadcn/ui スタイル</td></tr>
+    <tr><td>状態管理</td><td>Zustand + persist</td><td>localStorage、v2マイグレーション</td></tr>
+    <tr><td>LLM</td><td>Gemini API (<code>@google/genai</code>)</td><td><code>gemini-2.5-flash</code>、Structured JSON Output</td></tr>
+    <tr><td>デプロイ</td><td>Vercel</td><td>Preview URL でこの画面を共有中</td></tr>
+    <tr><td>型</td><td>TypeScript 5.7 strict</td><td><code>tsc --noEmit</code> クリーン</td></tr>
+  </tbody>
+</table>
+
+<h4>主要なファイル</h4>
+<pre><code>lib/
+├ types.ts            // Character / Interrupter / Choice / Emotion など
+├ store.ts            // Zustand ストア（CRUD・persist・migration）
+├ chat-logic.ts       // selectInterrupter（複合トリガ）など
+├ character-asset.ts  // mode-aware 画像パス解決
+├ template-engine.ts  // {char}{user}{topic} スロット差し込み
+├ defaults.ts         // デフォルト邪魔者・セリフテンプレ
+├ emotion.ts          // 好感度→表情 導出（フォールバック用）
+└ api-types.ts        // /api/chat の req/res 型
+
+app/api/chat/route.ts // Gemini Structured Output
+app/chat/page.tsx     // 自由テキスト入力チャット画面
+app/interrupters/     // 邪魔者CRUD画面群
+components/
+├ character-display.tsx  // 画像/動画切替・onErrorフォールバック
+├ interrupter-form.tsx   // 共有フォーム
+└ ...</code></pre>
+
+<h2 id="roadmap">7. 今後の予定</h2>
+
+<ol>
+  <li><strong>Phase 1 完了</strong>（実写画像）：ヒロインの不足3表情を生成・配置 → 邪魔者2体ぶんの画像生成 → 完全状態でのテストプレイ</li>
+  <li><strong>UIリプレース</strong>：Claude design または v0 でガラッと作り直し（ロジック層は触らない）</li>
+  <li><strong>Phase 2（飛ばし候補）</strong>：短尺動画ループ。乱入演出のカットインだけ部分採用は検討</li>
+  <li><strong>Phase 3</strong>：VRM / Three.js + R3F / Ready Player Me 等で現行3D化（vibe coding 待ちは不要）</li>
+  <li><strong>Phase 4</strong>：AI生成で画像／動画／3Dをオンザフライ生成</li>
+</ol>
+
+<h2 id="limitations">8. 既知の制約・注意</h2>
+
+<div class="card">
+  <h3>UI</h3>
+  <ul>
+    <li>現状のUIは <strong>「捨て前提」</strong> で組まれています。ロジック動作確認用と割り切ってください。</li>
+    <li>ヒーロー画像エリアが縦長／余白の取り方が雑なのは意図的（差し替え前に磨かない）。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>LLM</h3>
+  <ul>
+    <li>1ターンのレイテンシは1〜2秒。ストリーミング未対応。</li>
+    <li>レート制限なし（PoCのため）。本番化時は要対策。</li>
+    <li>セーフティ：システムプロンプトで成人向け／暴力的内容を禁止しているが、Gemini側のフィルタも併用。</li>
+    <li>たまにGeminiがJSONを返さずエラーになる場合あり（リトライしてください）。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>画像</h3>
+  <ul>
+    <li>ヒロインは <strong>清楚系のみ</strong> 用意。ギャル系／ナチュラルを選ぶとフォールバック表示になります。</li>
+    <li>邪魔者の画像はツッコミ部長のみ。夜々子・メタくんはアイコン代替。</li>
+    <li>背景画像は配置済みですがチャット画面では現状未使用。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>データ</h3>
+  <ul>
+    <li>localStorage を使うので、ブラウザのプライベートモードや履歴クリアでデータ消失します。</li>
+    <li>サーバー側にはユーザーデータは一切保存されていません（Gemini API呼び出しのみ）。</li>
+  </ul>
+</div>
+
+<hr>
+
+<p class="center small muted">
+  Last updated: 2026-05-08 ／ branch: <code>claude/memo-app-feasibility-J26oN</code><br>
+  PR <a href="https://github.com/Naru-365/MOSOU-MEMORIAL/pull/3">#3</a> に最新コミットが入っています。
+</p>
+
+</div>
+
+</body>
+</html>
