@@ -2,109 +2,124 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Heart, AlertTriangle } from 'lucide-react';
+import { Heart, AlertTriangle, Send, Loader2 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { BottomNavigation } from '@/components/bottom-navigation';
+import { CharacterDisplay } from '@/components/character-display';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import {
-  standardChoices,
-  getCharacterResponse,
-  shouldTriggerInterruption,
-  getRandomInterrupterType,
-  getInterrupterMessage,
-  getModifiedChoices,
-  calculateJealousyIncrease,
-} from '@/lib/chat-logic';
-import type { Choice, InterrupterType } from '@/lib/types';
-import { InterruptionModal } from '@/components/interruption-modal';
+import type { Emotion, InterrupterEmotion } from '@/lib/types';
+import type {
+  ChatApiError,
+  ChatApiRequest,
+  ChatApiResponse,
+} from '@/lib/api-types';
+
+const HEROINE_EMOTIONS: Emotion[] = [
+  'neutral',
+  'happy',
+  'tsun',
+  'blush',
+  'angry',
+  'surprised',
+  'laugh',
+  'sad',
+];
+
+function isHeroineEmotion(e: string): e is Emotion {
+  return (HEROINE_EMOTIONS as string[]).includes(e);
+}
 
 export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [isInterrupting, setIsInterrupting] = useState(false);
-  const [interrupterType, setInterrupterType] = useState<InterrupterType | null>(null);
-  const [currentChoices, setCurrentChoices] = useState<Choice[]>(standardChoices);
+  const [input, setInput] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');
 
   const {
     gameState,
     characters,
+    interrupters,
+    settings,
     addMessage,
     updateAffinity,
     updateJealousy,
-    setCurrentCharacter,
+    incrementTurn,
   } = useAppStore();
 
   const currentCharacter = characters.find(
     (c) => c.id === gameState.currentCharacterId
   );
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [gameState.messages]);
 
-  // Reset choices when interruption ends
-  useEffect(() => {
-    if (!isInterrupting) {
-      setCurrentChoices(standardChoices);
-    }
-  }, [isInterrupting]);
-
-  const handleChoice = (choice: Choice) => {
+  const handleSend = async () => {
     if (!currentCharacter) return;
+    const trimmed = input.trim();
+    if (!trimmed || isSending) return;
 
-    // Add user message
-    addMessage({
-      role: 'user',
-      content: choice.label,
-    });
+    setErrorMsg(null);
+    setIsSending(true);
+    setInput('');
 
-    // Update affinity
-    updateAffinity(choice.affinityChange);
+    addMessage({ role: 'user', content: trimmed });
 
-    // Update jealousy
-    const jealousyChange = calculateJealousyIncrease(choice.value);
-    updateJealousy(jealousyChange);
+    const requestBody: ChatApiRequest = {
+      character: currentCharacter,
+      interrupters,
+      gameState,
+      userMessage: trimmed,
+      userName: settings.userName,
+      history: gameState.messages.slice(-10),
+    };
 
-    // Check for interruption
-    if (shouldTriggerInterruption(gameState.jealousy + jealousyChange)) {
-      const type = getRandomInterrupterType();
-      setInterrupterType(type);
-      setIsInterrupting(true);
-      setCurrentChoices(getModifiedChoices(type));
-
-      // Add interrupter message
-      addMessage({
-        role: 'interrupter',
-        content: getInterrupterMessage(type),
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
       });
-    } else {
-      // Add character response
-      setTimeout(() => {
-        addMessage({
-          role: 'character',
-          content: getCharacterResponse(
-            gameState.affinity + choice.affinityChange,
-            currentCharacter
-          ),
-        });
-      }, 500);
+
+      if (!res.ok) {
+        const err = (await res.json().catch(() => null)) as ChatApiError | null;
+        throw new Error(err?.error ?? `API error: ${res.status}`);
+      }
+
+      const data = (await res.json()) as ChatApiResponse;
+
+      updateAffinity(data.affinityChange);
+      updateJealousy(data.jealousyChange);
+      incrementTurn();
+
+      if (data.speaker === 'character' && isHeroineEmotion(data.emotion)) {
+        setCurrentEmotion(data.emotion);
+      } else if (data.speaker === 'character') {
+        setCurrentEmotion('neutral');
+      }
+
+      addMessage({
+        role: data.speaker,
+        content: data.reply,
+        emotion: data.emotion as Emotion | InterrupterEmotion,
+        interrupterId: data.interrupterId,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'API呼び出し失敗';
+      setErrorMsg(message);
+    } finally {
+      setIsSending(false);
     }
   };
 
-  const handleDismissInterruption = () => {
-    setIsInterrupting(false);
-    setInterrupterType(null);
-    setCurrentChoices(standardChoices);
-
-    // Add character response after interruption
-    if (currentCharacter) {
-      setTimeout(() => {
-        addMessage({
-          role: 'character',
-          content: getCharacterResponse(gameState.affinity, currentCharacter),
-        });
-      }, 300);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Cmd/Ctrl+Enter to send (mobile keyboards usually have Enter as newline)
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      handleSend();
     }
   };
 
@@ -138,23 +153,31 @@ export default function ChatPage() {
       <header className="sticky top-0 z-10 bg-card border-b border-border">
         <div className="flex items-center justify-between px-4 h-14 max-w-md mx-auto">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center">
-              <span className="text-lg text-muted-foreground">
-                {currentCharacter.name.charAt(0)}
-              </span>
+            <div className="w-10 h-10 rounded-full bg-secondary overflow-hidden flex items-center justify-center">
+              <CharacterDisplay
+                character={currentCharacter}
+                emotion={currentEmotion}
+                mode={settings.assetMode}
+                className="w-full h-full"
+              />
             </div>
             <div>
-              <h1 className="font-bold text-foreground">{currentCharacter.name}</h1>
-              <p className="text-xs text-muted-foreground">{currentCharacter.personality}</p>
+              <h1 className="font-bold text-foreground">
+                {currentCharacter.name}
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                {currentCharacter.personality} / {currentEmotion}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2 bg-secondary px-3 py-1.5 rounded-full">
             <Heart className="w-4 h-4 text-primary fill-primary" />
-            <span className="text-sm font-medium text-foreground">{gameState.affinity}</span>
+            <span className="text-sm font-medium text-foreground">
+              {gameState.affinity}
+            </span>
           </div>
         </div>
 
-        {/* Jealousy indicator (only show when above 30) */}
         {gameState.jealousy >= 30 && (
           <div className="px-4 py-2 bg-destructive/10 border-t border-destructive/20">
             <div className="flex items-center gap-2 max-w-md mx-auto">
@@ -173,13 +196,25 @@ export default function ChatPage() {
         )}
       </header>
 
+      {/* Character hero (placeholder/throwaway styling — UI rewrite incoming) */}
+      <div className="px-4 pt-4 max-w-md w-full mx-auto">
+        <div className="aspect-[3/4] rounded-2xl bg-secondary overflow-hidden">
+          <CharacterDisplay
+            character={currentCharacter}
+            emotion={currentEmotion}
+            mode={settings.assetMode}
+            className="w-full h-full"
+          />
+        </div>
+      </div>
+
       {/* Messages */}
-      <main className="flex-1 overflow-y-auto px-4 py-4 pb-48">
+      <main className="flex-1 overflow-y-auto px-4 py-4 pb-44">
         <div className="max-w-md mx-auto flex flex-col gap-3">
           {gameState.messages.length === 0 && (
             <div className="text-center py-8">
               <p className="text-muted-foreground text-sm">
-                {currentCharacter.name}との会話を始めましょう
+                {currentCharacter.name}に話しかけてみましょう
               </p>
             </div>
           )}
@@ -205,48 +240,65 @@ export default function ChatPage() {
                 {message.role === 'interrupter' && (
                   <div className="flex items-center gap-1 mb-1">
                     <AlertTriangle className="w-3 h-3" />
-                    <span className="text-xs font-medium">邪魔キャラ</span>
+                    <span className="text-xs font-medium">
+                      邪魔キャラ乱入!
+                    </span>
                   </div>
                 )}
-                <p className="text-sm leading-relaxed">{message.content}</p>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {message.content}
+                </p>
               </div>
             </div>
           ))}
+
+          {isSending && (
+            <div className="flex justify-start">
+              <div className="bg-card text-muted-foreground border border-border rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">考え中…</span>
+              </div>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div className="text-center text-xs text-destructive py-2">
+              {errorMsg}
+            </div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
       </main>
 
-      {/* Choice Buttons */}
-      <div className="fixed bottom-16 left-0 right-0 bg-background/95 backdrop-blur-sm border-t border-border p-4">
-        <div className="max-w-md mx-auto flex flex-col gap-2">
-          {currentChoices.map((choice) => (
-            <Button
-              key={choice.value}
-              onClick={() => handleChoice(choice)}
-              variant={choice.value === 'positive' ? 'default' : 'outline'}
-              className={cn(
-                'h-12 rounded-xl font-medium',
-                choice.value === 'positive'
-                  ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
-                  : choice.value === 'negative'
-                  ? 'border-destructive/50 text-destructive hover:bg-destructive/10'
-                  : 'border-border text-foreground hover:bg-secondary'
-              )}
-            >
-              {choice.label}
-            </Button>
-          ))}
+      {/* Composer */}
+      <div className="fixed bottom-16 left-0 right-0 bg-background/95 backdrop-blur-sm border-t border-border p-3">
+        <div className="max-w-md mx-auto flex items-end gap-2">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={`${currentCharacter.name}に話しかける…`}
+            rows={1}
+            className="flex-1 min-h-[44px] max-h-32 resize-none rounded-2xl bg-card"
+            disabled={isSending}
+          />
+          <Button
+            onClick={handleSend}
+            disabled={isSending || !input.trim()}
+            className="h-11 w-11 rounded-full p-0 shrink-0"
+            aria-label="送信"
+          >
+            {isSending ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Send className="w-5 h-5" />
+            )}
+          </Button>
         </div>
       </div>
 
       <BottomNavigation />
-
-      {/* Interruption Modal */}
-      <InterruptionModal
-        isOpen={isInterrupting}
-        interrupterType={interrupterType}
-        onDismiss={handleDismissInterruption}
-      />
     </div>
   );
 }
