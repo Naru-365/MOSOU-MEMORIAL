@@ -1,30 +1,41 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Heart, AlertTriangle } from 'lucide-react';
+import { Heart, AlertTriangle, Send, Loader2 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { CharacterDisplay } from '@/components/character-display';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import {
-  standardChoices,
-  getCharacterResponse,
-  selectInterrupter,
-  getInterrupterMessage,
-  getModifiedChoices,
-  calculateJealousyIncrease,
-} from '@/lib/chat-logic';
-import { deriveCharacterEmotion } from '@/lib/emotion';
-import type { Choice, Emotion, GameState } from '@/lib/types';
-import { InterruptionModal } from '@/components/interruption-modal';
+import type { Emotion, InterrupterEmotion } from '@/lib/types';
+import type {
+  ChatApiError,
+  ChatApiRequest,
+  ChatApiResponse,
+} from '@/lib/api-types';
 
-const clamp = (n: number) => Math.max(0, Math.min(100, n));
+const HEROINE_EMOTIONS: Emotion[] = [
+  'neutral',
+  'happy',
+  'tsun',
+  'blush',
+  'angry',
+  'surprised',
+  'laugh',
+  'sad',
+];
+
+function isHeroineEmotion(e: string): e is Emotion {
+  return (HEROINE_EMOTIONS as string[]).includes(e);
+}
 
 export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [currentChoices, setCurrentChoices] = useState<Choice[]>(standardChoices);
+  const [input, setInput] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');
 
   const {
@@ -36,121 +47,80 @@ export default function ChatPage() {
     updateAffinity,
     updateJealousy,
     incrementTurn,
-    setActiveInterrupter,
-    getInterrupter,
   } = useAppStore();
 
   const currentCharacter = characters.find(
     (c) => c.id === gameState.currentCharacterId
   );
 
-  const activeInterrupter = useMemo(
-    () =>
-      gameState.activeInterrupterId
-        ? getInterrupter(gameState.activeInterrupterId) ?? null
-        : null,
-    [gameState.activeInterrupterId, getInterrupter]
-  );
-
-  const isInterrupting = !!activeInterrupter;
-
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [gameState.messages]);
 
-  // Sync choices with interruption state
-  useEffect(() => {
-    if (activeInterrupter) {
-      setCurrentChoices(getModifiedChoices(activeInterrupter));
-    } else {
-      setCurrentChoices(standardChoices);
-    }
-  }, [activeInterrupter]);
-
-  const handleChoice = (choice: Choice) => {
+  const handleSend = async () => {
     if (!currentCharacter) return;
+    const trimmed = input.trim();
+    if (!trimmed || isSending) return;
 
-    addMessage({ role: 'user', content: choice.label });
-    updateAffinity(choice.affinityChange);
-    const jealousyChange = calculateJealousyIncrease(choice.archetype);
-    updateJealousy(jealousyChange);
-    incrementTurn();
+    setErrorMsg(null);
+    setIsSending(true);
+    setInput('');
 
-    // Project the post-update state for trigger evaluation (store updates are async via set)
-    const projectedState: GameState = {
-      ...gameState,
-      affinity: clamp(gameState.affinity + choice.affinityChange),
-      jealousy: clamp(gameState.jealousy + jealousyChange),
-      turnCount: gameState.turnCount + 1,
+    addMessage({ role: 'user', content: trimmed });
+
+    const requestBody: ChatApiRequest = {
+      character: currentCharacter,
+      interrupters,
+      gameState,
+      userMessage: trimmed,
+      userName: settings.userName,
+      history: gameState.messages.slice(-10),
     };
 
-    // If we are currently in an interruption, the choice resolves it
-    if (isInterrupting) {
-      setActiveInterrupter(null);
-      const emotion = deriveCharacterEmotion(
-        projectedState.affinity,
-        choice.archetype,
-        false
-      );
-      setCurrentEmotion(emotion);
-      setTimeout(() => {
-        addMessage({
-          role: 'character',
-          content: getCharacterResponse(
-            projectedState.affinity,
-            currentCharacter,
-            { userName: settings.userName }
-          ),
-          emotion,
-        });
-      }, 300);
-      return;
-    }
-
-    // Otherwise, evaluate whether a new interrupter fires
-    const next = selectInterrupter(interrupters, projectedState, {
-      recentText: choice.label,
-    });
-    if (next) {
-      setActiveInterrupter(next.id);
-      setCurrentEmotion(
-        deriveCharacterEmotion(projectedState.affinity, choice.archetype, true)
-      );
-      addMessage({
-        role: 'interrupter',
-        content: getInterrupterMessage(next, {
-          user: settings.userName,
-          char: currentCharacter.name,
-        }),
-        interrupterId: next.id,
-        emotion: 'intro',
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
       });
-      return;
-    }
 
-    // Normal response path
-    const emotion = deriveCharacterEmotion(
-      projectedState.affinity,
-      choice.archetype,
-      false
-    );
-    setCurrentEmotion(emotion);
-    setTimeout(() => {
+      if (!res.ok) {
+        const err = (await res.json().catch(() => null)) as ChatApiError | null;
+        throw new Error(err?.error ?? `API error: ${res.status}`);
+      }
+
+      const data = (await res.json()) as ChatApiResponse;
+
+      updateAffinity(data.affinityChange);
+      updateJealousy(data.jealousyChange);
+      incrementTurn();
+
+      if (data.speaker === 'character' && isHeroineEmotion(data.emotion)) {
+        setCurrentEmotion(data.emotion);
+      } else if (data.speaker === 'character') {
+        setCurrentEmotion('neutral');
+      }
+
       addMessage({
-        role: 'character',
-        content: getCharacterResponse(
-          projectedState.affinity,
-          currentCharacter,
-          { userName: settings.userName }
-        ),
-        emotion,
+        role: data.speaker,
+        content: data.reply,
+        emotion: data.emotion as Emotion | InterrupterEmotion,
+        interrupterId: data.interrupterId,
       });
-    }, 500);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'API呼び出し失敗';
+      setErrorMsg(message);
+    } finally {
+      setIsSending(false);
+    }
   };
 
-  const handleDismissInterruption = () => {
-    setActiveInterrupter(null);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Cmd/Ctrl+Enter to send (mobile keyboards usually have Enter as newline)
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
   if (!currentCharacter) {
@@ -208,7 +178,6 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Jealousy indicator (only show when above 30) */}
         {gameState.jealousy >= 30 && (
           <div className="px-4 py-2 bg-destructive/10 border-t border-destructive/20">
             <div className="flex items-center gap-2 max-w-md mx-auto">
@@ -240,12 +209,12 @@ export default function ChatPage() {
       </div>
 
       {/* Messages */}
-      <main className="flex-1 overflow-y-auto px-4 py-4 pb-48">
+      <main className="flex-1 overflow-y-auto px-4 py-4 pb-44">
         <div className="max-w-md mx-auto flex flex-col gap-3">
           {gameState.messages.length === 0 && (
             <div className="text-center py-8">
               <p className="text-muted-foreground text-sm">
-                {currentCharacter.name}との会話を始めましょう
+                {currentCharacter.name}に話しかけてみましょう
               </p>
             </div>
           )}
@@ -271,48 +240,65 @@ export default function ChatPage() {
                 {message.role === 'interrupter' && (
                   <div className="flex items-center gap-1 mb-1">
                     <AlertTriangle className="w-3 h-3" />
-                    <span className="text-xs font-medium">邪魔キャラ</span>
+                    <span className="text-xs font-medium">
+                      邪魔キャラ乱入!
+                    </span>
                   </div>
                 )}
-                <p className="text-sm leading-relaxed">{message.content}</p>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {message.content}
+                </p>
               </div>
             </div>
           ))}
+
+          {isSending && (
+            <div className="flex justify-start">
+              <div className="bg-card text-muted-foreground border border-border rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">考え中…</span>
+              </div>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div className="text-center text-xs text-destructive py-2">
+              {errorMsg}
+            </div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
       </main>
 
-      {/* Choice Buttons */}
-      <div className="fixed bottom-16 left-0 right-0 bg-background/95 backdrop-blur-sm border-t border-border p-4">
-        <div className="max-w-md mx-auto flex flex-col gap-2">
-          {currentChoices.map((choice) => (
-            <Button
-              key={`${choice.archetype}-${choice.label}`}
-              onClick={() => handleChoice(choice)}
-              variant={choice.value === 'positive' ? 'default' : 'outline'}
-              className={cn(
-                'h-12 rounded-xl font-medium',
-                choice.value === 'positive'
-                  ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
-                  : choice.value === 'negative'
-                  ? 'border-destructive/50 text-destructive hover:bg-destructive/10'
-                  : 'border-border text-foreground hover:bg-secondary'
-              )}
-            >
-              {choice.label}
-            </Button>
-          ))}
+      {/* Composer */}
+      <div className="fixed bottom-16 left-0 right-0 bg-background/95 backdrop-blur-sm border-t border-border p-3">
+        <div className="max-w-md mx-auto flex items-end gap-2">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={`${currentCharacter.name}に話しかける…`}
+            rows={1}
+            className="flex-1 min-h-[44px] max-h-32 resize-none rounded-2xl bg-card"
+            disabled={isSending}
+          />
+          <Button
+            onClick={handleSend}
+            disabled={isSending || !input.trim()}
+            className="h-11 w-11 rounded-full p-0 shrink-0"
+            aria-label="送信"
+          >
+            {isSending ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Send className="w-5 h-5" />
+            )}
+          </Button>
         </div>
       </div>
 
       <BottomNavigation />
-
-      {/* Interruption Modal */}
-      <InterruptionModal
-        isOpen={isInterrupting}
-        interrupter={activeInterrupter}
-        onDismiss={handleDismissInterruption}
-      />
     </div>
   );
 }
