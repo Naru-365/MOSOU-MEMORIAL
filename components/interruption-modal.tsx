@@ -1,35 +1,40 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { AlertTriangle, X, UserX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { InterrupterType } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import type { Interrupter, InterrupterArchetype } from '@/lib/types';
+import { getInterrupterAsset } from '@/lib/character-asset';
 
 interface InterruptionModalProps {
   isOpen: boolean;
-  interrupterType: InterrupterType | null;
+  interrupter: Interrupter | null;
   onDismiss: () => void;
 }
 
-const interrupterInfo: Record<InterrupterType, { title: string; description: string }> = {
-  'ツッコミ系': {
-    title: 'ツッコミ系',
-    description: '論理的に否定してくる邪魔キャラ',
-  },
-  '束縛系': {
-    title: '束縛系',
-    description: '嫉妬深い邪魔キャラ',
-  },
-  'メタ系': {
-    title: 'メタ系',
-    description: 'ゲーム自体に言及する邪魔キャラ',
-  },
+const archetypeLabel: Record<InterrupterArchetype, string> = {
+  tsukkomi: 'ツッコミ系',
+  yandere: '束縛系',
+  meta: 'メタ系',
+  custom: 'カスタム',
 };
 
-export function InterruptionModal({ isOpen, interrupterType, onDismiss }: InterruptionModalProps) {
-  if (!isOpen || !interrupterType) return null;
+export function InterruptionModal({
+  isOpen,
+  interrupter,
+  onDismiss,
+}: InterruptionModalProps) {
+  const [imgErrored, setImgErrored] = useState(false);
 
-  const info = interrupterInfo[interrupterType];
+  useEffect(() => {
+    setImgErrored(false);
+  }, [interrupter?.id]);
+
+  if (!isOpen || !interrupter) return null;
+
+  const asset = getInterrupterAsset(interrupter, 'intro');
+  const description =
+    interrupter.description ?? archetypeLabel[interrupter.archetype];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -59,18 +64,26 @@ export function InterruptionModal({ isOpen, interrupterType, onDismiss }: Interr
         {/* Content */}
         <div className="p-6 flex flex-col items-center gap-4">
           {/* Interrupter Avatar */}
-          <div className="w-20 h-20 rounded-full bg-destructive/20 flex items-center justify-center">
-            <UserX className="w-10 h-10 text-destructive" />
+          <div className="w-20 h-20 rounded-full bg-destructive/20 overflow-hidden flex items-center justify-center relative">
+            {!imgErrored ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={asset.src}
+                alt={interrupter.name}
+                className="w-full h-full object-cover"
+                onError={() => setImgErrored(true)}
+              />
+            ) : (
+              <UserX className="w-10 h-10 text-destructive" />
+            )}
           </div>
 
           {/* Info */}
           <div className="text-center">
             <h3 className="text-lg font-bold text-foreground mb-1">
-              {info.title}
+              {interrupter.name}
             </h3>
-            <p className="text-sm text-muted-foreground">
-              {info.description}
-            </p>
+            <p className="text-sm text-muted-foreground">{description}</p>
           </div>
 
           {/* Warning */}

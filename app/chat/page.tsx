@@ -1,111 +1,156 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Heart, AlertTriangle } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { BottomNavigation } from '@/components/bottom-navigation';
+import { CharacterDisplay } from '@/components/character-display';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
   standardChoices,
   getCharacterResponse,
-  shouldTriggerInterruption,
-  getRandomInterrupterType,
+  selectInterrupter,
   getInterrupterMessage,
   getModifiedChoices,
   calculateJealousyIncrease,
 } from '@/lib/chat-logic';
-import type { Choice, InterrupterType } from '@/lib/types';
+import { deriveCharacterEmotion } from '@/lib/emotion';
+import type { Choice, Emotion, GameState } from '@/lib/types';
 import { InterruptionModal } from '@/components/interruption-modal';
+
+const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
 export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [isInterrupting, setIsInterrupting] = useState(false);
-  const [interrupterType, setInterrupterType] = useState<InterrupterType | null>(null);
   const [currentChoices, setCurrentChoices] = useState<Choice[]>(standardChoices);
+  const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');
 
   const {
     gameState,
     characters,
+    interrupters,
+    settings,
     addMessage,
     updateAffinity,
     updateJealousy,
-    setCurrentCharacter,
+    incrementTurn,
+    setActiveInterrupter,
+    getInterrupter,
   } = useAppStore();
 
   const currentCharacter = characters.find(
     (c) => c.id === gameState.currentCharacterId
   );
 
+  const activeInterrupter = useMemo(
+    () =>
+      gameState.activeInterrupterId
+        ? getInterrupter(gameState.activeInterrupterId) ?? null
+        : null,
+    [gameState.activeInterrupterId, getInterrupter]
+  );
+
+  const isInterrupting = !!activeInterrupter;
+
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [gameState.messages]);
 
-  // Reset choices when interruption ends
+  // Sync choices with interruption state
   useEffect(() => {
-    if (!isInterrupting) {
+    if (activeInterrupter) {
+      setCurrentChoices(getModifiedChoices(activeInterrupter));
+    } else {
       setCurrentChoices(standardChoices);
     }
-  }, [isInterrupting]);
+  }, [activeInterrupter]);
 
   const handleChoice = (choice: Choice) => {
     if (!currentCharacter) return;
 
-    // Add user message
-    addMessage({
-      role: 'user',
-      content: choice.label,
-    });
-
-    // Update affinity
+    addMessage({ role: 'user', content: choice.label });
     updateAffinity(choice.affinityChange);
-
-    // Update jealousy
-    const jealousyChange = calculateJealousyIncrease(choice.value);
+    const jealousyChange = calculateJealousyIncrease(choice.archetype);
     updateJealousy(jealousyChange);
+    incrementTurn();
 
-    // Check for interruption
-    if (shouldTriggerInterruption(gameState.jealousy + jealousyChange)) {
-      const type = getRandomInterrupterType();
-      setInterrupterType(type);
-      setIsInterrupting(true);
-      setCurrentChoices(getModifiedChoices(type));
+    // Project the post-update state for trigger evaluation (store updates are async via set)
+    const projectedState: GameState = {
+      ...gameState,
+      affinity: clamp(gameState.affinity + choice.affinityChange),
+      jealousy: clamp(gameState.jealousy + jealousyChange),
+      turnCount: gameState.turnCount + 1,
+    };
 
-      // Add interrupter message
-      addMessage({
-        role: 'interrupter',
-        content: getInterrupterMessage(type),
-      });
-    } else {
-      // Add character response
+    // If we are currently in an interruption, the choice resolves it
+    if (isInterrupting) {
+      setActiveInterrupter(null);
+      const emotion = deriveCharacterEmotion(
+        projectedState.affinity,
+        choice.archetype,
+        false
+      );
+      setCurrentEmotion(emotion);
       setTimeout(() => {
         addMessage({
           role: 'character',
           content: getCharacterResponse(
-            gameState.affinity + choice.affinityChange,
-            currentCharacter
+            projectedState.affinity,
+            currentCharacter,
+            { userName: settings.userName }
           ),
+          emotion,
         });
-      }, 500);
+      }, 300);
+      return;
     }
+
+    // Otherwise, evaluate whether a new interrupter fires
+    const next = selectInterrupter(interrupters, projectedState, {
+      recentText: choice.label,
+    });
+    if (next) {
+      setActiveInterrupter(next.id);
+      setCurrentEmotion(
+        deriveCharacterEmotion(projectedState.affinity, choice.archetype, true)
+      );
+      addMessage({
+        role: 'interrupter',
+        content: getInterrupterMessage(next, {
+          user: settings.userName,
+          char: currentCharacter.name,
+        }),
+        interrupterId: next.id,
+        emotion: 'intro',
+      });
+      return;
+    }
+
+    // Normal response path
+    const emotion = deriveCharacterEmotion(
+      projectedState.affinity,
+      choice.archetype,
+      false
+    );
+    setCurrentEmotion(emotion);
+    setTimeout(() => {
+      addMessage({
+        role: 'character',
+        content: getCharacterResponse(
+          projectedState.affinity,
+          currentCharacter,
+          { userName: settings.userName }
+        ),
+        emotion,
+      });
+    }, 500);
   };
 
   const handleDismissInterruption = () => {
-    setIsInterrupting(false);
-    setInterrupterType(null);
-    setCurrentChoices(standardChoices);
-
-    // Add character response after interruption
-    if (currentCharacter) {
-      setTimeout(() => {
-        addMessage({
-          role: 'character',
-          content: getCharacterResponse(gameState.affinity, currentCharacter),
-        });
-      }, 300);
-    }
+    setActiveInterrupter(null);
   };
 
   if (!currentCharacter) {
@@ -138,19 +183,28 @@ export default function ChatPage() {
       <header className="sticky top-0 z-10 bg-card border-b border-border">
         <div className="flex items-center justify-between px-4 h-14 max-w-md mx-auto">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center">
-              <span className="text-lg text-muted-foreground">
-                {currentCharacter.name.charAt(0)}
-              </span>
+            <div className="w-10 h-10 rounded-full bg-secondary overflow-hidden flex items-center justify-center">
+              <CharacterDisplay
+                character={currentCharacter}
+                emotion={currentEmotion}
+                mode={settings.assetMode}
+                className="w-full h-full"
+              />
             </div>
             <div>
-              <h1 className="font-bold text-foreground">{currentCharacter.name}</h1>
-              <p className="text-xs text-muted-foreground">{currentCharacter.personality}</p>
+              <h1 className="font-bold text-foreground">
+                {currentCharacter.name}
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                {currentCharacter.personality} / {currentEmotion}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2 bg-secondary px-3 py-1.5 rounded-full">
             <Heart className="w-4 h-4 text-primary fill-primary" />
-            <span className="text-sm font-medium text-foreground">{gameState.affinity}</span>
+            <span className="text-sm font-medium text-foreground">
+              {gameState.affinity}
+            </span>
           </div>
         </div>
 
@@ -172,6 +226,18 @@ export default function ChatPage() {
           </div>
         )}
       </header>
+
+      {/* Character hero (placeholder/throwaway styling — UI rewrite incoming) */}
+      <div className="px-4 pt-4 max-w-md w-full mx-auto">
+        <div className="aspect-[3/4] rounded-2xl bg-secondary overflow-hidden">
+          <CharacterDisplay
+            character={currentCharacter}
+            emotion={currentEmotion}
+            mode={settings.assetMode}
+            className="w-full h-full"
+          />
+        </div>
+      </div>
 
       {/* Messages */}
       <main className="flex-1 overflow-y-auto px-4 py-4 pb-48">
@@ -221,7 +287,7 @@ export default function ChatPage() {
         <div className="max-w-md mx-auto flex flex-col gap-2">
           {currentChoices.map((choice) => (
             <Button
-              key={choice.value}
+              key={`${choice.archetype}-${choice.label}`}
               onClick={() => handleChoice(choice)}
               variant={choice.value === 'positive' ? 'default' : 'outline'}
               className={cn(
@@ -244,7 +310,7 @@ export default function ChatPage() {
       {/* Interruption Modal */}
       <InterruptionModal
         isOpen={isInterrupting}
-        interrupterType={interrupterType}
+        interrupter={activeInterrupter}
         onDismiss={handleDismissInterruption}
       />
     </div>
