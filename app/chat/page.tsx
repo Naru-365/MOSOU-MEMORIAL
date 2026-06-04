@@ -270,8 +270,10 @@ export default function ChatPage() {
         }
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'API呼び出し失敗';
-      setErrorMsg(message);
+      // Gemini occasionally returns malformed/truncated JSON. Don't show the raw
+      // technical error; keep it in the console and prompt a friendly retry.
+      console.error('[chat] send failed:', e);
+      setErrorMsg('うまく返事を作れなかったみたい。もう一度送ってみてね。');
     } finally {
       setIsSending(false);
     }
