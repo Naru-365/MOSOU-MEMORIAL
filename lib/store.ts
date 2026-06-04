@@ -405,16 +405,25 @@ export const useAppStore = create<AppState>()(
       name: 'mosou-memorial-storage',
       version: 3,
       storage: createJSONStorage(() => safeStorage),
-      // Strip heavy base64 look images before writing to localStorage (quota is
-      // ~5-10MB). Metadata + basePrompt persist so a look can be regenerated.
+      // Persist small Supabase image URLs (so looks survive reload) but strip
+      // bulky inline base64 data URLs to stay under the localStorage quota.
+      // When Supabase Storage is configured, looks persist fully; otherwise
+      // base64 looks are dropped and regenerate on demand.
       partialize: (state) => ({
         ...state,
         characters: state.characters.map((c) => ({
           ...c,
           looks: (c.looks ?? []).map((l) => ({
             ...l,
-            images: {},
-            referenceImage: undefined,
+            images: Object.fromEntries(
+              Object.entries(l.images ?? {}).filter(
+                ([, v]) => typeof v === 'string' && v.startsWith('http')
+              )
+            ) as typeof l.images,
+            referenceImage:
+              l.referenceImage && l.referenceImage.startsWith('http')
+                ? l.referenceImage
+                : undefined,
           })),
         })),
         gameState: { ...state.gameState, isGeneratingLook: false },

@@ -2,8 +2,47 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildBaseLookPrompt, buildEditPrompt, buildLookPromptForEmotion } from '@/lib/image-prompt';
 import type { GenerateLookError, GenerateLookRequest, GenerateLookResponse } from '@/lib/api-types';
 import type { Emotion } from '@/lib/types';
+import { getSupabaseAdmin, IMAGE_BUCKET } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
+
+/** Get raw image bytes from a reference that may be a data URL or an http URL. */
+async function referenceToBuffer(reference: string): Promise<Buffer> {
+  if (/^https?:\/\//.test(reference)) {
+    const r = await fetch(reference);
+    if (!r.ok) throw new Error(`Failed to fetch reference image: ${r.status}`);
+    return Buffer.from(await r.arrayBuffer());
+  }
+  const b64 = reference.replace(/^data:[^;]+;base64,/, '');
+  return Buffer.from(b64, 'base64');
+}
+
+/**
+ * Persist a generated PNG. If Supabase Storage is configured, upload and return
+ * the public URL (small, survives reload, keeps localStorage tiny). Otherwise
+ * fall back to an inline data URL so the app still works without Supabase.
+ */
+async function persistImage(b64: string, emotion: Emotion): Promise<string> {
+  const admin = getSupabaseAdmin();
+  if (!admin) return `data:image/png;base64,${b64}`;
+  try {
+    const buf = Buffer.from(b64, 'base64');
+    const path = `looks/${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}-${emotion}.png`;
+    const { error } = await admin.storage
+      .from(IMAGE_BUCKET)
+      .upload(path, buf, { contentType: 'image/png', upsert: true });
+    if (error) {
+      console.error('[api/generate-look] storage upload failed:', error.message);
+      return `data:image/png;base64,${b64}`;
+    }
+    return admin.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+  } catch (e) {
+    console.error('[api/generate-look] storage error:', e);
+    return `data:image/png;base64,${b64}`;
+  }
+}
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -52,9 +91,9 @@ export async function POST(req: NextRequest) {
       let b64: string | undefined;
 
       if (referenceImage) {
-        // EDITS endpoint — identity-preserving
-        const b64Input = referenceImage.replace(/^data:[^;]+;base64,/, '');
-        const buf = Buffer.from(b64Input, 'base64');
+        // EDITS endpoint — identity-preserving. Reference may be a data URL or
+        // a Supabase public URL; both are resolved to bytes here.
+        const buf = await referenceToBuffer(referenceImage);
 
         const form = new FormData();
         form.append('model', 'gpt-image-2');
@@ -116,7 +155,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      images[emotion] = `data:image/png;base64,${b64}`;
+      images[emotion] = await persistImage(b64, emotion);
     }
 
     const referenceImageOut = images['neutral']!;
