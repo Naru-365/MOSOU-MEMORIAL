@@ -124,11 +124,16 @@ atmosphere, photorealistic, 35mm film, shallow depth of field, 16:9
 
 ### 一貫性Tips
 
-1. **1枚目を「neutral」から作る**（`images.generate`）。これが全表情の**リファレンス顔**になる。
-2. 2枚目以降は neutral を **参照画像として `images.edit` に渡し**、表情だけ差し替える（代替ツールなら `--cref` / IP-Adapter / FaceID）。
-3. 服・髪型・背景・照明は基礎プロンプトを **完全に固定**（語順も変えない）。
-4. 公式も「recurring character の一貫性は揺れ得る」と明記。顔がブレ始めたら**リファレンスを作り直す**（neutralを再生成して採用）。
-5. 将来は **ランタイムで gpt-image-2 を叩いてオンザフライ生成**（Phase 4）も視野。Responses API のマルチターン編集なら「同一人物のまま表情/シーン変更」を会話的に積み上げられる。
+> **identity（その子であること）と look（外見属性）を分けて考える**。本作は外見が動的に変わる
+> コンセプトなので、固定するのは**顔=identity**、意図的に変えるのは**髪型/服/年齢/種族=look**。
+> 外見が変わるたびに新しい **lookId** を発行し、その look の neutral をリファレンス顔として保存する。
+
+1. **1枚目を「neutral」から作る**（`images.generate`）。これが全表情の**リファレンス顔**になる（最初の lookId）。
+2. 表情差分は neutral を **参照画像として `images.edit` に渡し**、表情だけ差し替える（代替ツールなら `--cref` / IP-Adapter / FaceID）。
+3. **同じ look の中では** 服・髪型・背景・照明を**完全に固定**（語順も変えない）。表情だけ動かす。
+4. **look を変えるとき**（美容院/買い物/加齢/タイムスリップ/種族変化）は、**直前 look のリファレンス顔を参照画像に渡し**、変更点だけ指示（例：`"same person, new bob haircut"` / `"10 years older"` / `"as a shiba dog, keep her vibe"`）。生成物を**新しい lookId の neutral**として確定。
+5. 公式も「recurring character の一貫性は揺れ得る」と明記。顔がブレ始めたら**そのlookのリファレンスを作り直す**。
+6. **ランタイム生成（Phase 4）**：Responses API のマルチターン編集（`previous_response_id`）で「同一人物のまま外見/表情を会話的に更新」していくのが本命。会話イベント→ look 更新→立ち絵差し替え、を逐次回す。
 
 ## 5. 生成順序の推奨
 
