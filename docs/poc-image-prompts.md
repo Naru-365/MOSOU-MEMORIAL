@@ -1,15 +1,17 @@
 # PoC 画像生成プロンプト集
 
-方針：B案（AI画像生成）。**採用モデルは `gpt-image-2`（ChatGPT Images 2.0）**。
-最重要は **同一人物の一貫性**で、`gpt-image-2` の **参照画像によるキャラ固定
-（face-preserving reference lock）** を主軸にする。
-そのため「キャラ基礎プロンプト（毎回固定）＋表情差分（可変）＋リファレンス顔の参照」
+方針：B案（AI画像生成）。**採用モデルは `gpt-image-2`（OpenAI GPT Image）**。
+最重要は **同一人物の一貫性**で、`gpt-image-2` の **画像参照（reference images）による
+編集（Edits）** を主軸にする。
+そのため「キャラ基礎プロンプト（毎回固定）＋表情差分（可変）＋リファレンス顔を参照画像で渡す」
 の構造にする。
 
-> なぜ gpt-image-2：参照画像を1コールで最大16枚（実用は3〜5枚が最適）渡せ、
-> スタイリング・照明・ポーズを変えても人物の同一性（顔）を保持できる。
-> 1プロンプトでキャラ・スタイルを揃えた複数枚（最大8枚）を一括生成できるため、
-> 表情差分のバッチ生成と相性が良い。Midjourney / Imagen / SDXL は代替手段として後述。
+> なぜ gpt-image-2（OpenAI公式仕様ベース）：
+> - **Edits エンドポイント**に確定リファレンス顔を**参照画像**として渡し、新しい表情を生成できる。
+> - `gpt-image-2` は **入力画像を常に高忠実度（high fidelity）で処理**するため `input_fidelity` の指定は不要（＝顔のディテールが保たれやすい）。
+> - **Responses API のマルチターン編集**で「same person, change expression to ...」と反復指示でき、表情差分の作り込みに向く。
+>
+> ⚠️ 限界（公式明記）：それでも**複数回の生成で recurring character の見た目が揺れる**ことはある。だからリファレンス顔を固定し、ブレたら作り直す運用が前提。Midjourney / Imagen / SDXL は代替手段として後述。
 
 ## トーン共通アンカー
 
@@ -100,14 +102,17 @@ atmosphere, photorealistic, 35mm film, shallow depth of field, 16:9
 
 ## 4. ツール別Tips
 
-### 採用：`gpt-image-2`（ChatGPT Images 2.0 / OpenAI）
+### 採用：`gpt-image-2`（OpenAI GPT Image）
 
-| 項目 | 推奨 |
+| 項目 | 推奨 / 公式仕様 |
 |---|---|
-| キャラ固定 | 確定した neutral を **参照画像**として渡す（face-preserving reference lock）。1コール最大16枚渡せるが **3〜5枚が最適**（多すぎると参照同士が競合して劣化） |
-| 表情差分 | 参照を付けたまま `"same person, change expression to <expr>, keep hair/outfit/lighting identical"` で指示。thinking モードなら統一スタイルで複数枚一括生成も可 |
+| API | 単発生成は **Image API**（`images.generate` / `images.edit`）。会話的に反復編集するなら **Responses API**（`image_generation` ツール、`previous_response_id` でマルチターン） |
+| キャラ固定 | 確定した neutral を **参照画像**として **Edits（`images.edit`）** に渡し、新しい表情を生成。`gpt-image-2` は入力を**常に高忠実度で処理**（`input_fidelity` 指定不可・不要） |
+| 表情差分 | 参照を付けたまま `"same person, change expression to <expr>, keep hair/outfit/lighting identical"`。複数枚は `n` パラメータで一括取得 |
 | プロンプト | 先頭の `Photo of ...` を維持。語順は固定。基礎プロンプト＋表情差分の合成で投入 |
-| 解像度 | 最大2K（2048px）まで native 対応。バストアップは縦長比率で指定 |
+| 解像度 | 縦長は `1024x1536`、最大4K（`2160x3840`）まで。各辺16pxの倍数・長短比3:1以内。バストアップは縦長推奨 |
+| 品質/コスト | `low/medium/high/auto`。1枚あたり概算（1024x1536）= low **$0.005** / medium **$0.041** / high **$0.165**。下書きは low、確定アセットは high |
+| 注意 | gpt-image-2 は**透過背景 非対応**。複雑プロンプトは最大2分。`moderation: auto|low` で強度調整可（本作は健全用途なので auto で十分） |
 
 ### 代替（gpt-image-2 が使えない／コスト調整時）
 
@@ -119,11 +124,11 @@ atmosphere, photorealistic, 35mm film, shallow depth of field, 16:9
 
 ### 一貫性Tips
 
-1. **1枚目を「neutral」から作る**。これが全表情の**リファレンス顔**になる。
-2. 2枚目以降は neutral を **参照画像（gpt-image-2 reference lock）** に渡し、表情だけ差し替える（代替ツールなら `--cref` / IP-Adapter / FaceID）。
+1. **1枚目を「neutral」から作る**（`images.generate`）。これが全表情の**リファレンス顔**になる。
+2. 2枚目以降は neutral を **参照画像として `images.edit` に渡し**、表情だけ差し替える（代替ツールなら `--cref` / IP-Adapter / FaceID）。
 3. 服・髪型・背景・照明は基礎プロンプトを **完全に固定**（語順も変えない）。
-4. 顔がブレ始めたら、リファレンスを作り直す（neutralを再生成して採用）。
-5. 将来は **ランタイムで gpt-image-2 を叩いてオンザフライ生成**（Phase 4）も視野。その場合も「確定リファレンス顔を参照に固定」する原則は同じ。
+4. 公式も「recurring character の一貫性は揺れ得る」と明記。顔がブレ始めたら**リファレンスを作り直す**（neutralを再生成して採用）。
+5. 将来は **ランタイムで gpt-image-2 を叩いてオンザフライ生成**（Phase 4）も視野。Responses API のマルチターン編集なら「同一人物のまま表情/シーン変更」を会話的に積み上げられる。
 
 ## 5. 生成順序の推奨
 

@@ -498,7 +498,7 @@
     <tr><td>UI</td><td>React 19 + Tailwind v4</td><td>Radix UI コンポーネント、shadcn/ui スタイル</td></tr>
     <tr><td>状態管理</td><td>Zustand + persist</td><td>localStorage、v2マイグレーション</td></tr>
     <tr><td>LLM（会話）</td><td>Gemini API (<code>@google/genai</code>)</td><td><code>gemini-2.5-flash</code>、Structured JSON Output</td></tr>
-    <tr><td>画像生成</td><td><code>gpt-image-2</code> (ChatGPT Images 2.0)</td><td>参照画像でキャラ固定（face-preserving reference lock）。neutralをリファレンス顔にして表情差分をバッチ生成</td></tr>
+    <tr><td>画像生成</td><td><code>gpt-image-2</code> (OpenAI GPT Image)</td><td>Edits に neutral を参照画像として渡し表情差分を生成（入力は常に高忠実度処理）。1枚 ≒ $0.005(low)〜$0.165(high)</td></tr>
     <tr><td>UI生成</td><td>v0 (Vercel)</td><td>画面の土台を生成。ロジックは別途実装</td></tr>
     <tr><td>デプロイ</td><td>Vercel</td><td>Preview URL でこの画面を共有中</td></tr>
     <tr><td>型</td><td>TypeScript 5.7 strict</td><td><code>tsc --noEmit</code> クリーン</td></tr>
@@ -532,7 +532,7 @@ components/
   <li><strong>UIリプレース</strong>：v0 でガラッと作り直し（ロジック層は触らない）</li>
   <li><strong>Phase 2（飛ばし候補）</strong>：短尺動画ループ。乱入演出のカットインだけ部分採用は検討</li>
   <li><strong>Phase 3</strong>：VRM / Three.js + R3F / Ready Player Me 等で現行3D化（vibe coding 待ちは不要）</li>
-  <li><strong>Phase 4</strong>：<code>gpt-image-2</code> をランタイムで叩き、画像をオンザフライ生成（参照画像でキャラ固定したまま表情/シーンを動的生成）。動画／3Dも将来視野</li>
+  <li><strong>Phase 4</strong>：<code>gpt-image-2</code> をランタイムで叩き、画像をオンザフライ生成（Responses API のマルチターン編集で同一人物のまま表情/シーンを動的生成）。動画／3Dも将来視野</li>
 </ol>
 
 <h2 id="limitations">8. 既知の制約・注意</h2>
@@ -558,7 +558,8 @@ components/
 <div class="card">
   <h3>画像</h3>
   <ul>
-    <li>キャラ画像は <code>gpt-image-2</code> で生成。neutralを<strong>リファレンス顔</strong>にして参照固定し、表情差分を生成している（face-preserving reference lock）。</li>
+    <li>キャラ画像は <code>gpt-image-2</code> で生成。neutralを<strong>リファレンス顔</strong>にして <code>images.edit</code> の参照画像に渡し、表情差分を生成している（入力は常に高忠実度処理）。</li>
+    <li>※OpenAI公式も「recurring character の一貫性は複数生成で揺れ得る」と明記。ブレたらリファレンスを作り直す運用。</li>
     <li>現状の生成は<strong>事前生成→<code>public/</code> に配置</strong>する運用。ランタイム生成（オンザフライ）はPhase 4。</li>
     <li>ヒロインは <strong>清楚系のみ</strong> 用意。ギャル系／ナチュラルを選ぶとフォールバック表示になります。</li>
     <li>邪魔者の画像はツッコミ部長のみ。夜々子・メタくんはアイコン代替。</li>
