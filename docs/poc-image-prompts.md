@@ -1,7 +1,15 @@
 # PoC 画像生成プロンプト集
 
-方針：B案（AI画像生成）。最重要は **同一人物の一貫性**。
-そのため「キャラ基礎プロンプト（毎回固定）＋表情差分（可変）」の構造にする。
+方針：B案（AI画像生成）。**採用モデルは `gpt-image-2`（ChatGPT Images 2.0）**。
+最重要は **同一人物の一貫性**で、`gpt-image-2` の **参照画像によるキャラ固定
+（face-preserving reference lock）** を主軸にする。
+そのため「キャラ基礎プロンプト（毎回固定）＋表情差分（可変）＋リファレンス顔の参照」
+の構造にする。
+
+> なぜ gpt-image-2：参照画像を1コールで最大16枚（実用は3〜5枚が最適）渡せ、
+> スタイリング・照明・ポーズを変えても人物の同一性（顔）を保持できる。
+> 1プロンプトでキャラ・スタイルを揃えた複数枚（最大8枚）を一括生成できるため、
+> 表情差分のバッチ生成と相性が良い。Midjourney / Imagen / SDXL は代替手段として後述。
 
 ## トーン共通アンカー
 
@@ -92,19 +100,30 @@ atmosphere, photorealistic, 35mm film, shallow depth of field, 16:9
 
 ## 4. ツール別Tips
 
+### 採用：`gpt-image-2`（ChatGPT Images 2.0 / OpenAI）
+
+| 項目 | 推奨 |
+|---|---|
+| キャラ固定 | 確定した neutral を **参照画像**として渡す（face-preserving reference lock）。1コール最大16枚渡せるが **3〜5枚が最適**（多すぎると参照同士が競合して劣化） |
+| 表情差分 | 参照を付けたまま `"same person, change expression to <expr>, keep hair/outfit/lighting identical"` で指示。thinking モードなら統一スタイルで複数枚一括生成も可 |
+| プロンプト | 先頭の `Photo of ...` を維持。語順は固定。基礎プロンプト＋表情差分の合成で投入 |
+| 解像度 | 最大2K（2048px）まで native 対応。バストアップは縦長比率で指定 |
+
+### 代替（gpt-image-2 が使えない／コスト調整時）
+
 | ツール | 推奨設定 |
 |---|---|
 | **Midjourney v6+** | 末尾に `--style raw --ar 3:4 --s 50`（ポートレート）／背景は `--ar 16:9`。一貫性は1枚目を生成後に `--cref <url> --cw 100` で固定 |
 | **Imagen 3/4 (Gemini)** | 先頭の `Photo of` を維持。日本語混在OKだが英語のほうが安定。Aspect ratio はパラメータで指定 |
 | **Stable Diffusion XL / Flux** | 上記ネガティブを必ず適用。CFG 5–7、steps 30。一貫性は **同一seed＋IP-Adapter / FaceID / Reference** を併用 |
-| **Nano Banana / Gemini 2.5 Image** | 1枚目を作ったあと "same person, change expression to ..." で表情差分指示が効く |
 
 ### 一貫性Tips
 
-1. **1枚目を「neutral」から作る**。これがリファレンス顔になる。
-2. 2枚目以降は1枚目を `--cref` / IP-Adapter / FaceID で参照させて表情だけ差し替える。
+1. **1枚目を「neutral」から作る**。これが全表情の**リファレンス顔**になる。
+2. 2枚目以降は neutral を **参照画像（gpt-image-2 reference lock）** に渡し、表情だけ差し替える（代替ツールなら `--cref` / IP-Adapter / FaceID）。
 3. 服・髪型・背景・照明は基礎プロンプトを **完全に固定**（語順も変えない）。
-4. 顔がブレ始めたら、リファレンスを定期的に作り直す（neutralを再生成して採用）。
+4. 顔がブレ始めたら、リファレンスを作り直す（neutralを再生成して採用）。
+5. 将来は **ランタイムで gpt-image-2 を叩いてオンザフライ生成**（Phase 4）も視野。その場合も「確定リファレンス顔を参照に固定」する原則は同じ。
 
 ## 5. 生成順序の推奨
 
