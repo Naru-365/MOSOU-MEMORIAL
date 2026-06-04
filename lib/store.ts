@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware';
 import type {
   AppSettings,
   Character,
@@ -96,6 +96,49 @@ function phaseFor(character: Character | undefined): GamePhase {
   if (!character) return 'playing';
   return isFormless(character) ? 'onboarding' : 'playing';
 }
+
+/**
+ * localStorage wrapper that self-heals on corruption. If the persisted blob is
+ * truncated/invalid (e.g. quota cut a base64 image mid-write in an old build),
+ * JSON.parse would throw "Unterminated string in JSON" and crash the app on
+ * load. Here we validate on read and drop the bad value so the store falls back
+ * to defaults instead of crashing. All access is guarded for SSR / blocked
+ * storage.
+ */
+const safeStorage: StateStorage = {
+  getItem: (name) => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const str = window.localStorage.getItem(name);
+      if (!str) return null;
+      JSON.parse(str); // validate; throws if corrupted/truncated
+      return str;
+    } catch {
+      try {
+        window.localStorage.removeItem(name);
+      } catch {
+        /* ignore */
+      }
+      return null;
+    }
+  },
+  setItem: (name, value) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(name, value);
+    } catch {
+      /* quota exceeded or blocked — skip persisting this write */
+    }
+  },
+  removeItem: (name) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.removeItem(name);
+    } catch {
+      /* ignore */
+    }
+  },
+};
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -361,6 +404,7 @@ export const useAppStore = create<AppState>()(
     {
       name: 'mosou-memorial-storage',
       version: 3,
+      storage: createJSONStorage(() => safeStorage),
       // Strip heavy base64 look images before writing to localStorage (quota is
       // ~5-10MB). Metadata + basePrompt persist so a look can be regenerated.
       partialize: (state) => ({
