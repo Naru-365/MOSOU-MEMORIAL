@@ -273,20 +273,32 @@
 
 <h2 id="overview">1. プロジェクト概要</h2>
 <p>
-  「妄想メモリアル（妄メモ）」は、<strong>実写風キャラクターと自由会話できる、ギャグ寄りの恋愛シミュレーションPoC</strong>です。
-  ベタな恋愛ゲームではなく、<em>会話の合間に「邪魔者キャラ」が乱入してきてカオスに展開する</em>のが核のアイデア。
+  「妄想メモリアル（妄メモ）」は、<strong>会話型オープンワールド × 立ち絵会話シミュレーション</strong>です。
+  「立ち絵で会話するだけ」という一見“縛りの強い”枠に、<em>生成AIの「会話の自由度」と「画像生成の自由度」</em>
+  を持ち込んで、枠の中の自由を楽しんでもらうのが狙い。
 </p>
-<p>
-  リファレンスはひろちんくんの実況動画的な「実写×カオス」のノリ。恋愛要素は薄め、ギャグ要素強めで大衆向けに振ってあります。
+<div class="card">
+  <h3>コアの体験</h3>
+  <ul>
+    <li><strong>実体のない状態から始まる</strong>：最初ヒロインは姿を持たない（立ち絵なし、テキストだけ）。</li>
+    <li><strong>会話でキャラメイク</strong>：約 <strong>10ラリー</strong>の会話で好み（外見・性格・呼び名・雰囲気）をヒアリング → <code>gpt-image-2</code> で<strong>画像生成 → 立ち絵が初めて確定</strong>（最初のキャラメイク完成）。</li>
+    <li><strong>見た目が会話の中で変わる</strong>：美容院で髪型が変わる／服を買う／歳を取る／過去へタイムスリップで若返る／「実は犬だった」みたいな飛躍まで。identity（その子であること）は保ちつつ外見属性は意図的に変える。</li>
+    <li><strong>邪魔者乱入</strong>：恋愛シム＋ギャグ乱入は、このワールドの“イベント/NPC”として継続。</li>
+  </ul>
+</div>
+<p class="small muted">
+  ※ <strong>現状のビルドはこのコンセプトの PoC サブセット</strong>です。「実体なし→10ラリーでキャラメイク」「外見の動的変化」は
+  <span class="badge warn">実装(beta)</span> — コードは完成、実機ブラウザ検証はこれから。画像生成には <code>OPENAI_API_KEY</code> が必要。未設定時はシルエット表示で動作します。
 </p>
 
 <div class="card">
   <h3>このPoCで検証したいこと</h3>
   <ul>
-    <li>実写風画像で「妄想会話」のノリが成立するか</li>
-    <li>邪魔者の「乱入頻度」と「セリフのキャラ立ち」のチューニング感</li>
+    <li>縛りの強い立ち絵会話で、生成AIの<strong>会話＋画像生成の自由度</strong>が“面白さ”になるか</li>
+    <li>会話ヒアリング → 画像生成で<strong>キャラメイクが成立</strong>するか（10ラリーの肌感）</li>
+    <li><strong>外見を動的に変えても</strong> identity（その子らしさ）を保てるか（gpt-image-2 の Edits）</li>
+    <li>邪魔者の「乱入頻度」とセリフのキャラ立ちのチューニング感</li>
     <li>Gemini APIで「セリフ生成」と「好感度ジャッジ」を1コールで賄えるか</li>
-    <li>ボケ／ツッコミ／不条理 のギャグ枠で大衆向けトーンが作れるか</li>
   </ul>
 </div>
 
@@ -301,7 +313,10 @@
     <tr><td>画像（邪魔者ツッコミ部長）</td><td><span class="badge good">3/3</span></td><td>intro / peeved / smug 揃い</td></tr>
     <tr><td>画像（邪魔者 夜々子・メタくん）</td><td><span class="badge bad">0/6</span></td><td>未生成、デフォルトアイコンで代替</td></tr>
     <tr><td>背景</td><td><span class="badge good">2/2</span></td><td>school / night_park 揃い（現状チャット画面では未使用）</td></tr>
-    <tr><td>UI</td><td><span class="badge warn">仮置き</span></td><td>Claude design / v0 で差し替え予定。ロジック側は触らずUIだけ刷新可能な構造</td></tr>
+    <tr><td>UI</td><td><span class="badge warn">仮置き</span></td><td>v0 (Vercel) で生成した土台。差し替え前提だが、ロジック側は触らずUIだけ刷新可能な構造</td></tr>
+    <tr><td>会話オンボーディング</td><td><span class="badge warn">実装(beta)</span></td><td>実体なし→約10ラリーでヒアリング→立ち絵生成。実機検証これから</td></tr>
+    <tr><td>外見の動的変化</td><td><span class="badge warn">実装(beta)</span></td><td>lookId管理・美容院/服/加齢/タイムスリップ/犬…で再生成。実機検証これから</td></tr>
+    <tr><td>画像生成API</td><td><span class="badge warn">実装(beta)</span></td><td>POST /api/generate-look・gpt-image-2・要 OPENAI_API_KEY</td></tr>
     <tr><td>動画モード</td><td><span class="badge bad">未実装</span></td><td>抽象だけ用意済み（<code>AssetMode = 'image' | 'video' | '3d'</code>）</td></tr>
     <tr><td>3Dモード</td><td><span class="badge bad">未実装</span></td><td>同上、Phase 3 想定</td></tr>
   </tbody>
@@ -394,9 +409,34 @@
     <h3><span class="emoji">💾</span>永続化</h3>
     <ul>
       <li>Zustand persist（localStorage）</li>
-      <li>v2マイグレーション付き、古いキャッシュも壊れずアップグレード</li>
+      <li>v3マイグレーション付き、古いキャッシュも壊れずアップグレード</li>
       <li>「全データリセット」で完全初期化可能</li>
+      <li>base64画像は localStorage 容量節約のため保存対象外（リロード後に再生成）</li>
     </ul>
+  </div>
+
+  <div class="card">
+    <h3><span class="emoji">🌱</span>会話キャラメイク <span class="badge warn" style="vertical-align:middle;">実装(beta)</span></h3>
+    <ul>
+      <li>キャラ作成時は「実体なし（シルエット）」からスタート</li>
+      <li>約10ラリーの会話でヒロインが好み（外見・髪・服・性格・呼び名）をヒアリング</li>
+      <li>ヒアリング完了後、<code>POST /api/generate-look</code> で <code>gpt-image-2</code> による初回立ち絵を生成</li>
+      <li>生成完了で phase が <code>onboarding</code> → <code>playing</code> に切り替わり、立ち絵が確定</li>
+      <li><code>OPENAI_API_KEY</code> 未設定時はシルエットのまま <code>playing</code> に移行（ゲームは止まらない）</li>
+    </ul>
+    <p class="small muted">画面: <code>/characters/new</code> → <code>/chat</code> ／ エンドポイント: <code>POST /api/chat</code>（phase=onboarding）</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="emoji">🔄</span>外見の動的変化 <span class="badge warn" style="vertical-align:middle;">実装(beta)</span></h3>
+    <ul>
+      <li>外見を <code>lookId</code> 単位で管理。各 Look はメタデータ・属性・生成画像・参照画像を保持</li>
+      <li>会話中のキーワードを <code>detectLookChange()</code> が検出し外見変更イベントを発火</li>
+      <li>変更トリガ例：美容院→髪型 / 服→服装 / 歳を取る→加齢 / タイムスリップ→若返り / 犬→種族変化</li>
+      <li>変更時は前 look の neutral 画像を参照画像として <code>images.edit</code> に渡しアイデンティティを維持</li>
+      <li><code>mergeLookAttributes()</code> で属性差分をマージし、変わらない属性は前 look から引き継ぐ</li>
+    </ul>
+    <p class="small muted">エンドポイント: <code>POST /api/generate-look</code>（referenceImage あり = edits モード）</p>
   </div>
 
 </div>
@@ -497,7 +537,9 @@
     <tr><td>フレームワーク</td><td>Next.js 16 (Turbopack)</td><td>App Router、Route Handler で API実装</td></tr>
     <tr><td>UI</td><td>React 19 + Tailwind v4</td><td>Radix UI コンポーネント、shadcn/ui スタイル</td></tr>
     <tr><td>状態管理</td><td>Zustand + persist</td><td>localStorage、v2マイグレーション</td></tr>
-    <tr><td>LLM</td><td>Gemini API (<code>@google/genai</code>)</td><td><code>gemini-2.5-flash</code>、Structured JSON Output</td></tr>
+    <tr><td>LLM（会話）</td><td>Gemini API (<code>@google/genai</code>)</td><td><code>gemini-2.5-flash</code>、Structured JSON Output</td></tr>
+    <tr><td>画像生成</td><td><code>gpt-image-2</code> (OpenAI GPT Image)</td><td>エンドポイント <code>POST /api/generate-look</code>・要 <code>OPENAI_API_KEY</code>。Edits に neutral を参照画像として渡し表情差分を生成（入力は常に高忠実度処理）。1枚 ≒ $0.005(low)〜$0.165(high)</td></tr>
+    <tr><td>UI生成</td><td>v0 (Vercel)</td><td>画面の土台を生成。ロジックは別途実装</td></tr>
     <tr><td>デプロイ</td><td>Vercel</td><td>Preview URL でこの画面を共有中</td></tr>
     <tr><td>型</td><td>TypeScript 5.7 strict</td><td><code>tsc --noEmit</code> クリーン</td></tr>
   </tbody>
@@ -525,11 +567,13 @@ components/
 <h2 id="roadmap">7. 今後の予定</h2>
 
 <ol>
-  <li><strong>Phase 1 完了</strong>（実写画像）：ヒロインの不足3表情を生成・配置 → 邪魔者2体ぶんの画像生成 → 完全状態でのテストプレイ</li>
-  <li><strong>UIリプレース</strong>：Claude design または v0 でガラッと作り直し（ロジック層は触らない）</li>
+  <li><strong>Phase 1 完了</strong>（実写画像）：ヒロインの不足3表情を <code>gpt-image-2</code> の参照画像固定で生成・配置 → 邪魔者2体ぶんの画像生成 → 完全状態でのテストプレイ</li>
+  <li><strong>会話キャラメイク</strong>：実体なしで開始 → 約10ラリーで好みヒアリング → <code>gpt-image-2</code> で立ち絵確定（リファレンス顔も確定）。現状のフォーム入力を置換。<span class="badge warn">実装(beta)</span> — 実機検証・プロンプト調整これから</li>
+  <li><strong>外見の動的変化</strong>：見た目を <code>lookId</code> 単位で管理し、美容院/買い物/加齢/タイムスリップ/種族変化のイベントで <code>images.edit</code> に直前 look を参照画像として渡し差分生成。identity は保ち外見だけ更新。<span class="badge warn">実装(beta)</span> — 実機検証・プロンプト調整これから</li>
+  <li><strong>UIリプレース</strong>：v0 でガラッと作り直し（ロジック層は触らない）</li>
   <li><strong>Phase 2（飛ばし候補）</strong>：短尺動画ループ。乱入演出のカットインだけ部分採用は検討</li>
   <li><strong>Phase 3</strong>：VRM / Three.js + R3F / Ready Player Me 等で現行3D化（vibe coding 待ちは不要）</li>
-  <li><strong>Phase 4</strong>：AI生成で画像／動画／3Dをオンザフライ生成</li>
+  <li><strong>Phase 4</strong>：<code>gpt-image-2</code> をランタイムで叩き、画像をオンザフライ生成（Responses API のマルチターン編集で同一人物のまま表情/シーンを動的生成）。動画／3Dも将来視野</li>
 </ol>
 
 <h2 id="limitations">8. 既知の制約・注意</h2>
@@ -555,6 +599,9 @@ components/
 <div class="card">
   <h3>画像</h3>
   <ul>
+    <li>キャラ画像は <code>gpt-image-2</code> で生成。neutralを<strong>リファレンス顔</strong>にして <code>images.edit</code> の参照画像に渡し、表情差分を生成している（入力は常に高忠実度処理）。</li>
+    <li>※OpenAI公式も「recurring character の一貫性は複数生成で揺れ得る」と明記。ブレたらリファレンスを作り直す運用。</li>
+    <li>現状の生成は<strong>事前生成→<code>public/</code> に配置</strong>する運用。ランタイム生成（オンザフライ）はPhase 4。</li>
     <li>ヒロインは <strong>清楚系のみ</strong> 用意。ギャル系／ナチュラルを選ぶとフォールバック表示になります。</li>
     <li>邪魔者の画像はツッコミ部長のみ。夜々子・メタくんはアイコン代替。</li>
     <li>背景画像は配置済みですがチャット画面では現状未使用。</li>
@@ -572,8 +619,8 @@ components/
 <hr>
 
 <p class="center small muted">
-  Last updated: 2026-05-08 ／ branch: <code>claude/memo-app-feasibility-J26oN</code><br>
-  PR <a href="https://github.com/Naru-365/MOSOU-MEMORIAL/pull/3">#3</a> に最新コミットが入っています。
+  Last updated: 2026-06-04 ／ branch: <code>claude/keen-maxwell-hLhXy</code><br>
+  会話型オープンワールド新コンセプト実装（会話キャラメイク・外見の動的変化・<code>/api/generate-look</code>）を反映。実機検証はこれから。
 </p>
 
 </div>

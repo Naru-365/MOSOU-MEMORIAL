@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import { selectInterrupter } from '@/lib/chat-logic';
+import { buildOnboardingSystemPrompt } from '@/lib/onboarding-prompt';
+import { ONBOARDING_TARGET_RALLIES, shouldCompleteOnboarding } from '@/lib/onboarding';
 import type {
   ChatApiError,
   ChatApiRequest,
@@ -8,6 +10,7 @@ import type {
 } from '@/lib/api-types';
 import type {
   Character,
+  CharacterProfile,
   Emotion,
   Interrupter,
   InterrupterEmotion,
@@ -161,6 +164,52 @@ const responseSchema = {
   propertyOrdering: ['reply', 'affinityChange', 'jealousyChange', 'emotion'],
 };
 
+const onboardingResponseSchema = {
+  type: Type.OBJECT,
+  properties: {
+    reply: {
+      type: Type.STRING,
+      description: 'ヒロインのセリフ。1〜3文の日本語。',
+    },
+    affinityChange: {
+      type: Type.NUMBER,
+      description: '好感度の変化（整数、-3〜+5）',
+    },
+    jealousyChange: {
+      type: Type.NUMBER,
+      description: '嫉妬度の変化（0 固定）',
+    },
+    emotion: {
+      type: Type.STRING,
+      description: 'neutral | happy | tsun | blush | surprised | laugh',
+    },
+    onboarding: {
+      type: Type.OBJECT,
+      properties: {
+        complete: {
+          type: Type.BOOLEAN,
+          description: '十分な情報が集まったら true',
+        },
+        profile: {
+          type: Type.OBJECT,
+          properties: {
+            appearanceNotes: { type: Type.STRING },
+            personalityNotes: { type: Type.STRING },
+            hairStyle: { type: Type.STRING },
+            outfit: { type: Type.STRING },
+            vibe: { type: Type.STRING },
+            nickname: { type: Type.STRING },
+            rawSummary: { type: Type.STRING },
+          },
+        },
+      },
+      required: ['complete'],
+    },
+  },
+  required: ['reply', 'affinityChange', 'jealousyChange', 'emotion', 'onboarding'],
+  propertyOrdering: ['reply', 'affinityChange', 'jealousyChange', 'emotion', 'onboarding'],
+};
+
 function messagesToContents(history: Message[], userMessage: string) {
   const contents = history
     .filter((m) => m.content && m.content.trim().length > 0)
@@ -200,6 +249,9 @@ export async function POST(req: NextRequest) {
     history,
   } = body;
 
+  const phase = body.phase ?? 'playing';
+  const onboardingTurn = body.onboardingTurn ?? 0;
+
   if (!character || !userMessage?.trim()) {
     return NextResponse.json<ChatApiError>(
       { error: 'character and userMessage are required', code: 'BAD_REQUEST' },
@@ -207,94 +259,167 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Project state: increment turnCount as if this turn already happened, since
-  // the trigger logic considers the post-turn state.
-  const projectedState = { ...gameState, turnCount: gameState.turnCount + 1 };
-  const interrupter = selectInterrupter(interrupters, projectedState, {
-    recentText: userMessage,
-  });
-
-  const systemInstruction = interrupter
-    ? buildInterrupterSystemPrompt(
-        interrupter,
-        character,
-        gameState.affinity,
-        gameState.jealousy,
-        userName
-      )
-    : buildHeroineSystemPrompt(
-        character,
-        gameState.affinity,
-        gameState.jealousy,
-        userName,
-        gameState.turnCount
-      );
-
   const trimmedHistory = history.slice(-10);
   const contents = messagesToContents(trimmedHistory, userMessage);
+  const ai = new GoogleGenAI({ apiKey });
 
-  try {
-    const ai = new GoogleGenAI({ apiKey });
-    const result = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema,
-        temperature: 0.9,
-      },
-    });
+  if (phase === 'onboarding') {
+    const systemInstruction = buildOnboardingSystemPrompt(
+      character,
+      userName,
+      onboardingTurn,
+      ONBOARDING_TARGET_RALLIES
+    );
 
-    const text = result.text;
-    if (!text) {
+    try {
+      const result = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: onboardingResponseSchema,
+          temperature: 0.9,
+        },
+      });
+
+      const text = result.text;
+      if (!text) {
+        return NextResponse.json<ChatApiError>(
+          { error: 'Empty response from Gemini', code: 'GEMINI_FAILED' },
+          { status: 502 }
+        );
+      }
+
+      const parsed = JSON.parse(text) as {
+        reply: string;
+        affinityChange: number;
+        jealousyChange: number;
+        emotion: string;
+        onboarding?: { complete?: boolean; profile?: CharacterProfile };
+      };
+
+      const complete = shouldCompleteOnboarding(
+        onboardingTurn + 1,
+        Boolean(parsed.onboarding?.complete)
+      );
+
+      const emotion = (
+        HEROINE_EMOTIONS.includes(parsed.emotion as Emotion)
+          ? parsed.emotion
+          : 'neutral'
+      ) as Emotion;
+
+      const response: ChatApiResponse = {
+        speaker: 'character',
+        reply: parsed.reply.trim(),
+        affinityChange: clamp(Math.round(parsed.affinityChange ?? 0), -15, 15),
+        jealousyChange: clamp(Math.round(parsed.jealousyChange ?? 0), -15, 15),
+        emotion,
+        onboarding: {
+          complete,
+          profile: parsed.onboarding?.profile,
+        },
+      };
+
+      return NextResponse.json(response);
+    } catch (err) {
+      console.error('[api/chat] Gemini call failed (onboarding):', err);
       return NextResponse.json<ChatApiError>(
-        { error: 'Empty response from Gemini', code: 'GEMINI_FAILED' },
+        {
+          error:
+            err instanceof Error ? err.message : 'Unknown error from Gemini',
+          code: 'GEMINI_FAILED',
+        },
         { status: 502 }
       );
     }
+  } else {
+    // Project state: increment turnCount as if this turn already happened, since
+    // the trigger logic considers the post-turn state.
+    const projectedState = { ...gameState, turnCount: gameState.turnCount + 1 };
+    const interrupter = selectInterrupter(interrupters, projectedState, {
+      recentText: userMessage,
+    });
 
-    const parsed = JSON.parse(text) as {
-      reply: string;
-      affinityChange: number;
-      jealousyChange: number;
-      emotion: string;
-    };
+    const systemInstruction = interrupter
+      ? buildInterrupterSystemPrompt(
+          interrupter,
+          character,
+          gameState.affinity,
+          gameState.jealousy,
+          userName
+        )
+      : buildHeroineSystemPrompt(
+          character,
+          gameState.affinity,
+          gameState.jealousy,
+          userName,
+          gameState.turnCount
+        );
 
-    const speaker: 'character' | 'interrupter' = interrupter
-      ? 'interrupter'
-      : 'character';
+    try {
+      const result = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema,
+          temperature: 0.9,
+        },
+      });
 
-    const validEmotions: string[] = interrupter
-      ? INTERRUPTER_EMOTIONS
-      : HEROINE_EMOTIONS;
-    const emotion = (
-      validEmotions.includes(parsed.emotion)
-        ? parsed.emotion
-        : interrupter
-        ? 'intro'
-        : 'neutral'
-    ) as Emotion | InterrupterEmotion;
+      const text = result.text;
+      if (!text) {
+        return NextResponse.json<ChatApiError>(
+          { error: 'Empty response from Gemini', code: 'GEMINI_FAILED' },
+          { status: 502 }
+        );
+      }
 
-    const response: ChatApiResponse = {
-      speaker,
-      interrupterId: interrupter?.id,
-      reply: parsed.reply.trim(),
-      affinityChange: clamp(Math.round(parsed.affinityChange ?? 0), -15, 15),
-      jealousyChange: clamp(Math.round(parsed.jealousyChange ?? 0), -15, 15),
-      emotion,
-    };
+      const parsed = JSON.parse(text) as {
+        reply: string;
+        affinityChange: number;
+        jealousyChange: number;
+        emotion: string;
+      };
 
-    return NextResponse.json(response);
-  } catch (err) {
-    console.error('[api/chat] Gemini call failed:', err);
-    return NextResponse.json<ChatApiError>(
-      {
-        error:
-          err instanceof Error ? err.message : 'Unknown error from Gemini',
-        code: 'GEMINI_FAILED',
-      },
-      { status: 502 }
-    );
+      const speaker: 'character' | 'interrupter' = interrupter
+        ? 'interrupter'
+        : 'character';
+
+      const validEmotions: string[] = interrupter
+        ? INTERRUPTER_EMOTIONS
+        : HEROINE_EMOTIONS;
+      const emotion = (
+        validEmotions.includes(parsed.emotion)
+          ? parsed.emotion
+          : interrupter
+          ? 'intro'
+          : 'neutral'
+      ) as Emotion | InterrupterEmotion;
+
+      const response: ChatApiResponse = {
+        speaker,
+        interrupterId: interrupter?.id,
+        reply: parsed.reply.trim(),
+        affinityChange: clamp(Math.round(parsed.affinityChange ?? 0), -15, 15),
+        jealousyChange: clamp(Math.round(parsed.jealousyChange ?? 0), -15, 15),
+        emotion,
+      };
+
+      return NextResponse.json(response);
+    } catch (err) {
+      console.error('[api/chat] Gemini call failed:', err);
+      return NextResponse.json<ChatApiError>(
+        {
+          error:
+            err instanceof Error ? err.message : 'Unknown error from Gemini',
+          code: 'GEMINI_FAILED',
+        },
+        { status: 502 }
+      );
+    }
   }
 }

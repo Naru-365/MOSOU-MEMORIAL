@@ -18,15 +18,14 @@ import { useAppStore } from '@/lib/store';
 import type { Character } from '@/lib/types';
 
 const personalities: Character['personality'][] = ['優しい', 'クール', 'ツンデレ'];
-const appearances: Character['appearance'][] = ['清楚系', 'ギャル系', 'ナチュラル'];
 
 export default function CharacterCreatePage() {
   const router = useRouter();
   const addCharacter = useAppStore((state) => state.addCharacter);
+  const startSession = useAppStore((state) => state.startSession);
 
   const [name, setName] = useState('');
   const [personality, setPersonality] = useState<Character['personality']>('優しい');
-  const [appearance, setAppearance] = useState<Character['appearance']>('清楚系');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,13 +34,13 @@ export default function CharacterCreatePage() {
 
     setIsSubmitting(true);
 
-    const newCharacter = addCharacter({
+    const c = addCharacter({
       name: name.trim(),
       personality,
-      appearance,
+      appearance: '清楚系',
     });
-
-    router.push(`/characters/${newCharacter.id}`);
+    startSession(c.id);
+    router.push('/chat');
   };
 
   return (
@@ -49,7 +48,7 @@ export default function CharacterCreatePage() {
       {/* Header */}
       <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="flex items-center justify-between px-4 h-14 max-w-md mx-auto">
-          <h1 className="text-lg font-bold text-foreground">新しいキャラクターを作成</h1>
+          <h1 className="text-lg font-bold text-foreground">新しい子と出会う</h1>
           <Link
             href="/characters"
             className="p-2 rounded-full hover:bg-secondary min-w-[44px] min-h-[44px] flex items-center justify-center"
@@ -105,24 +104,10 @@ export default function CharacterCreatePage() {
             </Select>
           </div>
 
-          {/* Appearance */}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="appearance" className="text-foreground">
-              見た目
-            </Label>
-            <Select value={appearance} onValueChange={(v) => setAppearance(v as Character['appearance'])}>
-              <SelectTrigger id="appearance" className="h-12 rounded-xl bg-card border-border text-foreground">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                {appearances.map((a) => (
-                  <SelectItem key={a} value={a} className="rounded-lg">
-                    {a}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Appearance hearing note */}
+          <p className="text-xs text-muted-foreground text-center leading-relaxed">
+            見た目は会話の中で（約10ラリーのヒアリングで）決めていきます
+          </p>
 
           {/* Submit Button */}
           <Button
@@ -130,7 +115,7 @@ export default function CharacterCreatePage() {
             disabled={!name.trim() || isSubmitting}
             className="h-14 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-lg mt-4"
           >
-            {isSubmitting ? '作成中...' : '作成する'}
+            {isSubmitting ? '作成中...' : '出会う'}
           </Button>
         </form>
       </main>

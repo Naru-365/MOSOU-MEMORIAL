@@ -1,7 +1,17 @@
 # PoC 画像生成プロンプト集
 
-方針：B案（AI画像生成）。最重要は **同一人物の一貫性**。
-そのため「キャラ基礎プロンプト（毎回固定）＋表情差分（可変）」の構造にする。
+方針：B案（AI画像生成）。**採用モデルは `gpt-image-2`（OpenAI GPT Image）**。
+最重要は **同一人物の一貫性**で、`gpt-image-2` の **画像参照（reference images）による
+編集（Edits）** を主軸にする。
+そのため「キャラ基礎プロンプト（毎回固定）＋表情差分（可変）＋リファレンス顔を参照画像で渡す」
+の構造にする。
+
+> なぜ gpt-image-2（OpenAI公式仕様ベース）：
+> - **Edits エンドポイント**に確定リファレンス顔を**参照画像**として渡し、新しい表情を生成できる。
+> - `gpt-image-2` は **入力画像を常に高忠実度（high fidelity）で処理**するため `input_fidelity` の指定は不要（＝顔のディテールが保たれやすい）。
+> - **Responses API のマルチターン編集**で「same person, change expression to ...」と反復指示でき、表情差分の作り込みに向く。
+>
+> ⚠️ 限界（公式明記）：それでも**複数回の生成で recurring character の見た目が揺れる**ことはある。だからリファレンス顔を固定し、ブレたら作り直す運用が前提。Midjourney / Imagen / SDXL は代替手段として後述。
 
 ## トーン共通アンカー
 
@@ -92,19 +102,38 @@ atmosphere, photorealistic, 35mm film, shallow depth of field, 16:9
 
 ## 4. ツール別Tips
 
+### 採用：`gpt-image-2`（OpenAI GPT Image）
+
+| 項目 | 推奨 / 公式仕様 |
+|---|---|
+| API | 単発生成は **Image API**（`images.generate` / `images.edit`）。会話的に反復編集するなら **Responses API**（`image_generation` ツール、`previous_response_id` でマルチターン） |
+| キャラ固定 | 確定した neutral を **参照画像**として **Edits（`images.edit`）** に渡し、新しい表情を生成。`gpt-image-2` は入力を**常に高忠実度で処理**（`input_fidelity` 指定不可・不要） |
+| 表情差分 | 参照を付けたまま `"same person, change expression to <expr>, keep hair/outfit/lighting identical"`。複数枚は `n` パラメータで一括取得 |
+| プロンプト | 先頭の `Photo of ...` を維持。語順は固定。基礎プロンプト＋表情差分の合成で投入 |
+| 解像度 | 縦長は `1024x1536`、最大4K（`2160x3840`）まで。各辺16pxの倍数・長短比3:1以内。バストアップは縦長推奨 |
+| 品質/コスト | `low/medium/high/auto`。1枚あたり概算（1024x1536）= low **$0.005** / medium **$0.041** / high **$0.165**。下書きは low、確定アセットは high |
+| 注意 | gpt-image-2 は**透過背景 非対応**。複雑プロンプトは最大2分。`moderation: auto|low` で強度調整可（本作は健全用途なので auto で十分） |
+
+### 代替（gpt-image-2 が使えない／コスト調整時）
+
 | ツール | 推奨設定 |
 |---|---|
 | **Midjourney v6+** | 末尾に `--style raw --ar 3:4 --s 50`（ポートレート）／背景は `--ar 16:9`。一貫性は1枚目を生成後に `--cref <url> --cw 100` で固定 |
 | **Imagen 3/4 (Gemini)** | 先頭の `Photo of` を維持。日本語混在OKだが英語のほうが安定。Aspect ratio はパラメータで指定 |
 | **Stable Diffusion XL / Flux** | 上記ネガティブを必ず適用。CFG 5–7、steps 30。一貫性は **同一seed＋IP-Adapter / FaceID / Reference** を併用 |
-| **Nano Banana / Gemini 2.5 Image** | 1枚目を作ったあと "same person, change expression to ..." で表情差分指示が効く |
 
 ### 一貫性Tips
 
-1. **1枚目を「neutral」から作る**。これがリファレンス顔になる。
-2. 2枚目以降は1枚目を `--cref` / IP-Adapter / FaceID で参照させて表情だけ差し替える。
-3. 服・髪型・背景・照明は基礎プロンプトを **完全に固定**（語順も変えない）。
-4. 顔がブレ始めたら、リファレンスを定期的に作り直す（neutralを再生成して採用）。
+> **identity（その子であること）と look（外見属性）を分けて考える**。本作は外見が動的に変わる
+> コンセプトなので、固定するのは**顔=identity**、意図的に変えるのは**髪型/服/年齢/種族=look**。
+> 外見が変わるたびに新しい **lookId** を発行し、その look の neutral をリファレンス顔として保存する。
+
+1. **1枚目を「neutral」から作る**（`images.generate`）。これが全表情の**リファレンス顔**になる（最初の lookId）。
+2. 表情差分は neutral を **参照画像として `images.edit` に渡し**、表情だけ差し替える（代替ツールなら `--cref` / IP-Adapter / FaceID）。
+3. **同じ look の中では** 服・髪型・背景・照明を**完全に固定**（語順も変えない）。表情だけ動かす。
+4. **look を変えるとき**（美容院/買い物/加齢/タイムスリップ/種族変化）は、**直前 look のリファレンス顔を参照画像に渡し**、変更点だけ指示（例：`"same person, new bob haircut"` / `"10 years older"` / `"as a shiba dog, keep her vibe"`）。生成物を**新しい lookId の neutral**として確定。
+5. 公式も「recurring character の一貫性は揺れ得る」と明記。顔がブレ始めたら**そのlookのリファレンスを作り直す**。
+6. **ランタイム生成（Phase 4）**：Responses API のマルチターン編集（`previous_response_id`）で「同一人物のまま外見/表情を会話的に更新」していくのが本命。会話イベント→ look 更新→立ち絵差し替え、を逐次回す。
 
 ## 5. 生成順序の推奨
 
