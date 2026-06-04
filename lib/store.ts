@@ -5,11 +5,16 @@ import { persist } from 'zustand/middleware';
 import type {
   AppSettings,
   Character,
+  CharacterProfile,
+  Emotion,
+  GamePhase,
   GameState,
   Interrupter,
+  Look,
   Message,
 } from './types';
 import { defaultInterrupters } from './defaults';
+import { isFormless } from './onboarding';
 
 interface AppState {
   // Characters
@@ -20,6 +25,17 @@ interface AppState {
   updateCharacter: (id: string, updates: Partial<Character>) => void;
   deleteCharacter: (id: string) => void;
   getCharacter: (id: string) => Character | undefined;
+
+  // Looks (appearance snapshots) + onboarding profile
+  setCharacterProfile: (characterId: string, profile: CharacterProfile) => void;
+  addLook: (characterId: string, look: Look) => void;
+  setCurrentLook: (characterId: string, lookId: string) => void;
+  updateLookImages: (
+    characterId: string,
+    lookId: string,
+    images: Partial<Record<Emotion, string>>,
+    referenceImage?: string
+  ) => void;
 
   // Interrupters
   interrupters: Interrupter[];
@@ -37,7 +53,13 @@ interface AppState {
 
   // Game state
   gameState: GameState;
+  /** Start a chat session; phase is 'onboarding' for formless characters. */
+  startSession: (characterId: string) => void;
+  /** Back-compat alias of startSession. */
   setCurrentCharacter: (characterId: string | null) => void;
+  setPhase: (phase: GamePhase) => void;
+  incrementOnboardingTurn: () => void;
+  setGeneratingLook: (value: boolean) => void;
   updateAffinity: (change: number) => void;
   updateJealousy: (change: number) => void;
   addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void;
@@ -59,12 +81,21 @@ const initialGameState: GameState = {
   activeInterrupterId: null,
   messages: [],
   turnCount: 0,
+  phase: 'playing',
+  onboardingTurn: 0,
+  isGeneratingLook: false,
 };
 
 const initialSettings: AppSettings = {
   userName: 'プレイヤー',
   assetMode: 'image',
 };
+
+/** Compute the starting phase for a character: formless -> onboarding. */
+function phaseFor(character: Character | undefined): GamePhase {
+  if (!character) return 'playing';
+  return isFormless(character) ? 'onboarding' : 'playing';
+}
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -77,6 +108,8 @@ export const useAppStore = create<AppState>()(
       addCharacter: (characterData) => {
         const newCharacter: Character = {
           id: generateId(),
+          looks: [],
+          currentLookId: null,
           ...characterData,
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -109,6 +142,67 @@ export const useAppStore = create<AppState>()(
 
       getCharacter: (id) => {
         return get().characters.find((char) => char.id === id);
+      },
+
+      setCharacterProfile: (characterId, profile) => {
+        set((state) => ({
+          characters: state.characters.map((c) =>
+            c.id === characterId
+              ? {
+                  ...c,
+                  profile: { ...c.profile, ...profile },
+                  updatedAt: Date.now(),
+                }
+              : c
+          ),
+        }));
+      },
+
+      addLook: (characterId, look) => {
+        set((state) => ({
+          characters: state.characters.map((c) =>
+            c.id === characterId
+              ? {
+                  ...c,
+                  looks: [...(c.looks ?? []), look],
+                  currentLookId: look.id,
+                  updatedAt: Date.now(),
+                }
+              : c
+          ),
+        }));
+      },
+
+      setCurrentLook: (characterId, lookId) => {
+        set((state) => ({
+          characters: state.characters.map((c) =>
+            c.id === characterId
+              ? { ...c, currentLookId: lookId, updatedAt: Date.now() }
+              : c
+          ),
+        }));
+      },
+
+      updateLookImages: (characterId, lookId, images, referenceImage) => {
+        set((state) => ({
+          characters: state.characters.map((c) =>
+            c.id === characterId
+              ? {
+                  ...c,
+                  looks: (c.looks ?? []).map((l) =>
+                    l.id === lookId
+                      ? {
+                          ...l,
+                          images: { ...l.images, ...images },
+                          referenceImage: referenceImage ?? l.referenceImage,
+                        }
+                      : l
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : c
+          ),
+        }));
       },
 
       addInterrupter: (data) => {
@@ -154,12 +248,41 @@ export const useAppStore = create<AppState>()(
         set((state) => ({ settings: { ...state.settings, ...updates } }));
       },
 
-      setCurrentCharacter: (characterId) => {
+      startSession: (characterId) => {
+        const character = get().characters.find((c) => c.id === characterId);
         set(() => ({
           gameState: {
             ...initialGameState,
             currentCharacterId: characterId,
+            phase: phaseFor(character),
           },
+        }));
+      },
+
+      setCurrentCharacter: (characterId) => {
+        if (characterId === null) {
+          set(() => ({ gameState: initialGameState }));
+          return;
+        }
+        get().startSession(characterId);
+      },
+
+      setPhase: (phase) => {
+        set((state) => ({ gameState: { ...state.gameState, phase } }));
+      },
+
+      incrementOnboardingTurn: () => {
+        set((state) => ({
+          gameState: {
+            ...state.gameState,
+            onboardingTurn: state.gameState.onboardingTurn + 1,
+          },
+        }));
+      },
+
+      setGeneratingLook: (value) => {
+        set((state) => ({
+          gameState: { ...state.gameState, isGeneratingLook: value },
         }));
       },
 
@@ -237,27 +360,51 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'mosou-memorial-storage',
-      version: 2,
+      version: 3,
+      // Strip heavy base64 look images before writing to localStorage (quota is
+      // ~5-10MB). Metadata + basePrompt persist so a look can be regenerated.
+      partialize: (state) => ({
+        ...state,
+        characters: state.characters.map((c) => ({
+          ...c,
+          looks: (c.looks ?? []).map((l) => ({
+            ...l,
+            images: {},
+            referenceImage: undefined,
+          })),
+        })),
+        gameState: { ...state.gameState, isGeneratingLook: false },
+      }),
       migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== 'object') return persisted;
         const p = persisted as Record<string, unknown>;
+        const prevGame = (p.gameState ?? {}) as Partial<GameState>;
         if (version < 2) {
-          const prevGame = (p.gameState ?? {}) as Partial<GameState>;
-          return {
-            ...p,
-            interrupters:
-              Array.isArray(p.interrupters) && p.interrupters.length > 0
-                ? p.interrupters
-                : defaultInterrupters,
-            settings: (p.settings as AppSettings) ?? initialSettings,
-            gameState: {
-              ...initialGameState,
-              ...prevGame,
-              activeInterrupterId: prevGame.activeInterrupterId ?? null,
-              turnCount: prevGame.turnCount ?? 0,
-            },
-          };
+          p.interrupters =
+            Array.isArray(p.interrupters) && p.interrupters.length > 0
+              ? p.interrupters
+              : defaultInterrupters;
+          p.settings = (p.settings as AppSettings) ?? initialSettings;
         }
+        if (version < 3) {
+          // Backfill new-concept fields.
+          p.characters = Array.isArray(p.characters)
+            ? (p.characters as Character[]).map((c) => ({
+                ...c,
+                looks: c.looks ?? [],
+                currentLookId: c.currentLookId ?? null,
+              }))
+            : [];
+        }
+        p.gameState = {
+          ...initialGameState,
+          ...prevGame,
+          activeInterrupterId: prevGame.activeInterrupterId ?? null,
+          turnCount: prevGame.turnCount ?? 0,
+          phase: prevGame.phase ?? 'playing',
+          onboardingTurn: prevGame.onboardingTurn ?? 0,
+          isGeneratingLook: false,
+        };
         return p;
       },
     }

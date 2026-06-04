@@ -6,6 +6,7 @@ import type {
   Interrupter,
   InterrupterArchetype,
   InterrupterEmotion,
+  Look,
 } from './types';
 
 const appearanceSlugMap: Record<Appearance, string> = {
@@ -30,6 +31,11 @@ export interface AssetRef {
   fallback: string;
 }
 
+/**
+ * Legacy resolver: maps a static appearance slug to a public image path.
+ * Kept for backward compatibility (form-created characters with no Look) and as
+ * the path fallback inside resolveCharacterAsset.
+ */
 export function getCharacterAsset(
   character: Pick<Character, 'appearance'>,
   emotion: Emotion = 'neutral',
@@ -42,6 +48,57 @@ export function getCharacterAsset(
     src: `/images/characters/${slug}/${emotion}.${ext}`,
     fallback: `/images/characters/${slug}/neutral.${ext}`,
   };
+}
+
+/**
+ * Resolved render target for the conversational-open-world concept.
+ *
+ * Priority:
+ *  1. `generatedSrc` — a data URL from the active Look (gpt-image-2 output).
+ *     Falls back within the look to neutral / referenceImage.
+ *  2. `pathSrc` — legacy public path to try (may 404 -> caller shows silhouette).
+ *  3. neither -> formless: caller renders the silhouette / name-initial fallback.
+ */
+export interface ResolvedAsset {
+  mode: AssetMode;
+  emotion: Emotion;
+  /** Generated data URL (guaranteed to exist when non-null). */
+  generatedSrc: string | null;
+  /** Public path to attempt when no generated image is available. */
+  pathSrc: string | null;
+  /** True when no image source is available at all (formless). */
+  formless: boolean;
+}
+
+export function resolveCharacterAsset(
+  character: Pick<Character, 'appearance' | 'looks' | 'currentLookId'>,
+  look: Look | null | undefined,
+  emotion: Emotion = 'neutral',
+  mode: AssetMode = 'image'
+): ResolvedAsset {
+  // 1. Generated image from the active look.
+  if (look) {
+    const generated =
+      look.images[emotion] ?? look.images.neutral ?? look.referenceImage ?? null;
+    if (generated) {
+      return { mode, emotion, generatedSrc: generated, pathSrc: null, formless: false };
+    }
+    // Look exists but its images were stripped (e.g. after reload). It's not a
+    // generated image, but it's also not the legacy static character -> treat as
+    // formless so the UI prompts a regenerate instead of loading a wrong slug.
+    return { mode, emotion, generatedSrc: null, pathSrc: null, formless: true };
+  }
+
+  // 2. No look at all. If this is a legacy form-created character, try the
+  //    static public path; the component falls back to the initial on error.
+  const hasLooks = (character.looks?.length ?? 0) > 0 || !!character.currentLookId;
+  if (!hasLooks) {
+    const { src } = getCharacterAsset(character, emotion, mode);
+    return { mode, emotion, generatedSrc: null, pathSrc: src, formless: false };
+  }
+
+  // 3. Truly formless.
+  return { mode, emotion, generatedSrc: null, pathSrc: null, formless: true };
 }
 
 export function getInterrupterAsset(

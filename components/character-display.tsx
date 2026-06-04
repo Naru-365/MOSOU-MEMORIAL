@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { AssetMode, Character, Emotion } from '@/lib/types';
-import { getCharacterAsset } from '@/lib/character-asset';
+import { Sparkles } from 'lucide-react';
+import type { AssetMode, Character, Emotion, Look } from '@/lib/types';
+import { resolveCharacterAsset } from '@/lib/character-asset';
 import { cn } from '@/lib/utils';
 
 interface CharacterDisplayProps {
@@ -10,6 +11,8 @@ interface CharacterDisplayProps {
   emotion?: Emotion;
   mode?: AssetMode;
   className?: string;
+  /** Active look (generated images live here). Null/undefined => formless. */
+  look?: Look | null;
   /**
    * If true, render a name initial fallback when the asset fails to load.
    * If false, render an empty box (used when caller overlays its own fallback).
@@ -22,17 +25,19 @@ export function CharacterDisplay({
   emotion = 'neutral',
   mode = 'image',
   className,
+  look,
   showInitialFallback = true,
 }: CharacterDisplayProps) {
-  const asset = getCharacterAsset(character, emotion, mode);
+  const asset = resolveCharacterAsset(character, look ?? null, emotion, mode);
   const [errored, setErrored] = useState(false);
 
-  // Reset the error state when the resolved asset path changes (emotion / mode swap)
+  // Reset the error state when the resolved source changes (emotion / look swap)
   useEffect(() => {
     setErrored(false);
-  }, [asset.src]);
+  }, [asset.generatedSrc, asset.pathSrc]);
 
-  if (errored) {
+  // Initial / empty fallback shared by image error and formless states.
+  const renderInitialFallback = () => {
     if (!showInitialFallback) return <div className={className} aria-hidden />;
     return (
       <div
@@ -46,13 +51,43 @@ export function CharacterDisplay({
         </span>
       </div>
     );
+  };
+
+  if (errored) {
+    return renderInitialFallback();
+  }
+
+  // Formless: soft gradient placeholder with a faded initial + sparkle.
+  if (asset.formless) {
+    if (!showInitialFallback) return <div className={className} aria-hidden />;
+    return (
+      <div
+        className={cn(
+          'relative flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-secondary to-secondary/40 text-muted-foreground',
+          className
+        )}
+      >
+        <span className="text-5xl font-medium opacity-30">
+          {character.name.charAt(0)}
+        </span>
+        <Sparkles className="w-6 h-6 opacity-60" />
+        <span className="text-xs opacity-70">姿はまだ…</span>
+      </div>
+    );
+  }
+
+  // Generated data URL takes priority over legacy static path.
+  const src = asset.generatedSrc ?? asset.pathSrc;
+  if (!src) {
+    return renderInitialFallback();
   }
 
   if (mode === 'video') {
+    // Video uses the legacy static path only.
     return (
       <video
-        key={asset.src}
-        src={asset.src}
+        key={src}
+        src={src}
         autoPlay
         loop
         muted
@@ -66,8 +101,8 @@ export function CharacterDisplay({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      key={asset.src}
-      src={asset.src}
+      key={src}
+      src={src}
       alt={`${character.name} (${emotion})`}
       className={cn('object-cover', className)}
       onError={() => setErrored(true)}
