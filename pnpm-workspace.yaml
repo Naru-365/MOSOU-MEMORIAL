@@ -1,0 +1,7 @@
+# pnpm settings (new home for onlyBuiltDependencies as of pnpm 10).
+# Allowlist native packages whose install/build scripts we trust, so
+# `pnpm install` / `pnpm dev` don't fail on pending build-script approval.
+onlyBuiltDependencies:
+  - '@google/genai'
+  - protobufjs
+  - sharp
