@@ -94,3 +94,44 @@ export interface GenerateLookError {
   /** NO_IMAGE_API => no OPENAI_API_KEY configured; UI degrades to silhouette. */
   code?: 'NO_IMAGE_API' | 'OPENAI_FAILED' | 'BAD_REQUEST';
 }
+
+// ----- /api/looks/upload request/response -----
+// Persists generated look images (base64) to Supabase Storage and returns their
+// public URLs. saveId/characterId/lookId form the storage path.
+
+export interface UploadLookRequest {
+  saveId: string;
+  characterId: string;
+  lookId: string;
+  /** emotion -> data URL (data:image/png;base64,...). */
+  images: Partial<Record<Emotion, string>>;
+  /** Optional neutral reference data URL; stored as `_reference.png`. */
+  referenceImage?: string;
+}
+
+export interface UploadLookResponse {
+  /** emotion -> Supabase Storage public URL. */
+  imageUrls: Partial<Record<Emotion, string>>;
+  /** Public URL of the reference image, when provided. */
+  referenceImageUrl?: string;
+}
+
+export interface UploadLookError {
+  error: string;
+  code?: 'NO_SUPABASE' | 'BAD_REQUEST' | 'TOO_LARGE' | 'UPLOAD_FAILED';
+}
+
+// ----- /api/save request/response -----
+// Anonymous cloud save keyed by saveId. The stored `data` is the serialized
+// store snapshot (heavy base64 images stripped; image URLs retained).
+
+export interface SaveLoadResponse {
+  found: boolean;
+  data: unknown | null;
+  updatedAt: string | null;
+}
+
+export interface SaveError {
+  error: string;
+  code?: 'NO_SUPABASE' | 'BAD_REQUEST' | 'TOO_LARGE' | 'DB_FAILED';
+}

@@ -42,6 +42,10 @@ export interface Look {
   attributes: LookAttributes;
   images: Partial<Record<Emotion, string>>; // emotion -> data URL (runtime)
   referenceImage?: string; // neutral data URL used as edit reference (runtime)
+  // Supabase Storage public URLs (persisted; survive reload/cross-device since
+  // base64 `images`/`referenceImage` are stripped before persisting).
+  imageUrls?: Partial<Record<Emotion, string>>; // emotion -> Storage public URL
+  referenceImageUrl?: string; // neutral Storage public URL
   basePrompt?: string; // locked identity+look prompt used to generate
   createdAt: number;
 }

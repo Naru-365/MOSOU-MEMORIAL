@@ -21,6 +21,7 @@ import type {
   ChatApiResponse,
   GenerateLookRequest,
   GenerateLookResponse,
+  UploadLookResponse,
 } from '@/lib/api-types';
 import { getCurrentLook, detectLookChange, createLook, mergeLookAttributes } from '@/lib/looks';
 import type { LookChangeIntent } from '@/lib/looks';
@@ -65,7 +66,31 @@ export default function ChatPage() {
     setGeneratingLook,
     setCharacterProfile,
     addLook,
+    setLookImageUrls,
   } = useAppStore();
+
+  // Persist freshly generated look images to Supabase Storage and store the
+  // returned public URLs. Non-blocking: failures keep the session's base64 only.
+  const uploadLookImages = async (
+    characterId: string,
+    lookId: string,
+    images: Partial<Record<Emotion, string>>,
+    referenceImage?: string
+  ) => {
+    try {
+      const saveId = useAppStore.getState().saveId;
+      const res = await fetch('/api/looks/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saveId, characterId, lookId, images, referenceImage }),
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as UploadLookResponse;
+      setLookImageUrls(characterId, lookId, data.imageUrls, data.referenceImageUrl);
+    } catch {
+      // Storage not configured / offline: base64 remains for this session.
+    }
+  };
 
   const currentCharacter = characters.find(
     (c) => c.id === gameState.currentCharacterId
@@ -114,6 +139,7 @@ export default function ChatPage() {
       look.images = data.images;
       look.referenceImage = data.referenceImage;
       addLook(charId, look);
+      void uploadLookImages(charId, look.id, data.images, data.referenceImage);
       addMessage({
         role: 'character',
         content: `（${character.name}が姿を現した！）`,
@@ -184,6 +210,7 @@ export default function ChatPage() {
       newLook.images = data.images;
       newLook.referenceImage = data.referenceImage;
       addLook(charId, newLook);
+      void uploadLookImages(charId, newLook.id, data.images, data.referenceImage);
       addMessage({
         role: 'character',
         content: `（${intent.label}）`,

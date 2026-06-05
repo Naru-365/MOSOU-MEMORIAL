@@ -68,11 +68,27 @@ interface AppState {
   setActiveInterrupter: (id: string | null) => void;
   resetGameState: () => void;
 
+  // Cloud sync (Supabase)
+  /** Anonymous, unguessable owner key (UUID); generated once, persisted. */
+  saveId: string;
+  setLookImageUrls: (
+    characterId: string,
+    lookId: string,
+    imageUrls: Partial<Record<Emotion, string>>,
+    referenceImageUrl?: string
+  ) => void;
+  /** Replace synced data fields (characters/interrupters/settings/gameState) from a cloud save. */
+  applyCloudData: (data: unknown) => void;
+
   // Full reset
   resetAll: () => void;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
+
+const generateSaveId = () =>
+  globalThis.crypto?.randomUUID?.() ??
+  `${generateId()}${generateId()}`.replace(/[^a-z0-9]/gi, '').slice(0, 32);
 
 const initialGameState: GameState = {
   affinity: 50,
@@ -104,6 +120,7 @@ export const useAppStore = create<AppState>()(
       interrupters: defaultInterrupters,
       settings: initialSettings,
       gameState: initialGameState,
+      saveId: generateSaveId(),
 
       addCharacter: (characterData) => {
         const newCharacter: Character = {
@@ -202,6 +219,54 @@ export const useAppStore = create<AppState>()(
                 }
               : c
           ),
+        }));
+      },
+
+      setLookImageUrls: (characterId, lookId, imageUrls, referenceImageUrl) => {
+        set((state) => ({
+          characters: state.characters.map((c) =>
+            c.id === characterId
+              ? {
+                  ...c,
+                  looks: (c.looks ?? []).map((l) =>
+                    l.id === lookId
+                      ? {
+                          ...l,
+                          imageUrls: { ...(l.imageUrls ?? {}), ...imageUrls },
+                          referenceImageUrl:
+                            referenceImageUrl ?? l.referenceImageUrl,
+                        }
+                      : l
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : c
+          ),
+        }));
+      },
+
+      applyCloudData: (data) => {
+        if (!data || typeof data !== 'object') return;
+        const d = data as Partial<
+          Pick<AppState, 'characters' | 'interrupters' | 'settings' | 'gameState'>
+        >;
+        set((state) => ({
+          characters: Array.isArray(d.characters)
+            ? (d.characters as Character[])
+            : state.characters,
+          interrupters: Array.isArray(d.interrupters)
+            ? (d.interrupters as Interrupter[])
+            : state.interrupters,
+          settings: d.settings
+            ? { ...state.settings, ...(d.settings as AppSettings) }
+            : state.settings,
+          gameState: d.gameState
+            ? {
+                ...state.gameState,
+                ...(d.gameState as GameState),
+                isGeneratingLook: false,
+              }
+            : state.gameState,
         }));
       },
 
@@ -410,3 +475,25 @@ export const useAppStore = create<AppState>()(
     }
   )
 );
+
+/**
+ * Builds the cloud-sync payload from the store state: the same data fields that
+ * persist locally, with heavy base64 look images stripped (those live in
+ * Supabase Storage; `imageUrls`/`referenceImageUrl` survive via `...l`). The
+ * `saveId` is excluded — it is the row key, not part of the saved data.
+ */
+export function serializeForCloud(state: AppState) {
+  return {
+    characters: state.characters.map((c) => ({
+      ...c,
+      looks: (c.looks ?? []).map((l) => ({
+        ...l,
+        images: {},
+        referenceImage: undefined,
+      })),
+    })),
+    interrupters: state.interrupters,
+    settings: state.settings,
+    gameState: { ...state.gameState, isGeneratingLook: false },
+  };
+}
