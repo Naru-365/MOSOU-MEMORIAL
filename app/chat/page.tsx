@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, AlertTriangle, Send, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { Heart, AlertTriangle, Send, Loader2, Sparkles, Image as ImageIcon, ImagePlus } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { CharacterDisplay } from '@/components/character-display';
@@ -24,6 +24,10 @@ import type {
   ChatApiResponse,
   GenerateLookRequest,
   GenerateLookResponse,
+  UploadLookResponse,
+  GenerateBackgroundRequest,
+  GenerateBackgroundResponse,
+  CharacterSessionResponse,
 } from '@/lib/api-types';
 import { getCurrentLook, detectLookChange, createLook, mergeLookAttributes } from '@/lib/looks';
 import type { LookChangeIntent } from '@/lib/looks';
@@ -50,11 +54,14 @@ const ONBOARDING_OPENING =
 export default function ChatPage() {
   const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hydratedCharRef = useRef<string | null>(null);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');
   const [vanishing, setVanishing] = useState(false);
+  const [generatingBg, setGeneratingBg] = useState(false);
+  const [bgPreview, setBgPreview] = useState<string | null>(null);
 
   const {
     gameState,
@@ -72,17 +79,109 @@ export default function ChatPage() {
     addLook,
     updateSettings,
     markCharacterDisappeared,
+    setLookImageUrls,
+    hydrateCharacterSession,
   } = useAppStore();
+
+  // Persist freshly generated look images to Supabase Storage and store the
+  // returned public URLs. Non-blocking: failures keep the session's base64 only.
+  const uploadLookImages = async (
+    characterId: string,
+    lookId: string,
+    images: Partial<Record<Emotion, string>>,
+    referenceImage?: string
+  ) => {
+    try {
+      const saveId = useAppStore.getState().saveId;
+      const res = await fetch('/api/looks/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saveId, characterId, lookId, images, referenceImage }),
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as UploadLookResponse;
+      setLookImageUrls(characterId, lookId, data.imageUrls, data.referenceImageUrl);
+    } catch {
+      // Storage not configured / offline: base64 remains for this session.
+    }
+  };
 
   const currentCharacter = characters.find(
     (c) => c.id === gameState.currentCharacterId
   );
 
   const currentLook = getCurrentLook(currentCharacter);
+  // Transient data URL (instant) takes precedence over the persisted Storage URL.
+  const backgroundUrl =
+    bgPreview ?? currentCharacter?.profile?.backgroundUrl ?? null;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [gameState.messages]);
+
+  // On entering a character's chat, restore that character's saved session
+  // (affinity / turn / transcript) from Supabase — startSession resets to initial,
+  // so without this re-entering a heroine would lose the conversation & affinity.
+  useEffect(() => {
+    const cid = gameState.currentCharacterId;
+    if (!cid || hydratedCharRef.current === cid) return;
+    hydratedCharRef.current = cid;
+    let cancelled = false;
+    (async () => {
+      try {
+        const saveId = useAppStore.getState().saveId;
+        const res = await fetch(
+          `/api/sync/character?saveId=${encodeURIComponent(saveId)}&characterId=${encodeURIComponent(cid)}`
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as CharacterSessionResponse;
+        if (!cancelled && data?.found) {
+          hydrateCharacterSession(cid, data);
+        }
+      } catch {
+        // offline / not configured: keep local state.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gameState.currentCharacterId, hydrateCharacterSession]);
+
+  // --- Scene background generation -------------------------------------------
+  const generateBackground = async () => {
+    if (!currentCharacter || generatingBg) return;
+    setGeneratingBg(true);
+    setErrorMsg(null);
+    try {
+      const saveId = useAppStore.getState().saveId;
+      const body: GenerateBackgroundRequest = {
+        saveId,
+        characterId: currentCharacter.id,
+        characterName: currentCharacter.name,
+        profile: currentCharacter.profile,
+        attributes: currentLook?.attributes,
+      };
+      const res = await fetch('/api/generate-background', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        setErrorMsg('背景の生成に失敗しました。少し待ってからもう一度お試しください。');
+        return;
+      }
+      const data = (await res.json()) as GenerateBackgroundResponse;
+      // Show the data URL instantly; persist only the Storage URL (never base64).
+      setBgPreview(data.image);
+      if (data.imageUrl) {
+        setCharacterProfile(currentCharacter.id, { backgroundUrl: data.imageUrl });
+      }
+    } catch {
+      setErrorMsg('背景の生成に失敗しました。');
+    } finally {
+      setGeneratingBg(false);
+    }
+  };
 
   // --- First look generation (end of onboarding) -----------------------------
   const generateFirstLook = async (
@@ -95,7 +194,10 @@ export default function ChatPage() {
       const body: GenerateLookRequest = {
         characterName: character.name,
         profile,
-        emotions: ['neutral', 'happy', 'sad'],
+        // Neutral only: one image (~20s) instead of three (~60s). The display
+        // falls back to neutral for every emotion, and the route degrades
+        // gracefully, so the heroine reliably "appears" without timing out.
+        emotions: ['neutral'],
         quality: 'low',
       };
       const res = await fetch('/api/generate-look', {
@@ -121,6 +223,7 @@ export default function ChatPage() {
       look.images = data.images;
       look.referenceImage = data.referenceImage;
       addLook(charId, look);
+      void uploadLookImages(charId, look.id, data.images, data.referenceImage);
       addMessage({
         role: 'character',
         content: `（${character.name}が姿を現した！）`,
@@ -191,6 +294,7 @@ export default function ChatPage() {
       newLook.images = data.images;
       newLook.referenceImage = data.referenceImage;
       addLook(charId, newLook);
+      void uploadLookImages(charId, newLook.id, data.images, data.referenceImage);
       addMessage({
         role: 'character',
         content: `（${intent.label}）`,
@@ -386,14 +490,29 @@ export default function ChatPage() {
 
   return (
     <div className="relative min-h-screen bg-background flex flex-col">
-      {/* Scene background (behind all content) */}
-      <div
-        className="fixed inset-0 -z-10 bg-cover bg-center"
-        style={{ backgroundImage: `url(${sceneBackground})` }}
-        aria-hidden
-      />
-      <div className="fixed inset-0 -z-10 bg-background/70" aria-hidden />
-
+      {/* Background: AI-generated scene takes precedence; otherwise a static
+          stock scene (settings.sceneKey) so chat always has a backdrop. */}
+      {backgroundUrl ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={backgroundUrl}
+            alt=""
+            aria-hidden
+            className="fixed inset-0 w-full h-full object-cover -z-10"
+          />
+          <div className="fixed inset-0 -z-10 bg-background/55 backdrop-blur-[1px]" />
+        </>
+      ) : (
+        <>
+          <div
+            className="fixed inset-0 -z-10 bg-cover bg-center"
+            style={{ backgroundImage: `url(${sceneBackground})` }}
+            aria-hidden
+          />
+          <div className="fixed inset-0 -z-10 bg-background/70" aria-hidden />
+        </>
+      )}
       {/* Header */}
       <header className="sticky top-0 z-10 bg-card border-b border-border">
         <div className="flex items-center justify-between px-4 h-14 max-w-md mx-auto">
@@ -424,18 +543,20 @@ export default function ChatPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={toggleScene}
-              aria-label="シーン背景を切り替え"
-              title="シーン背景"
-              className="flex items-center gap-1 bg-secondary px-3 py-1.5 rounded-full min-h-[36px] text-foreground"
-            >
-              <ImageIcon className="w-4 h-4 text-muted-foreground" />
-              <span className="text-xs font-medium">
-                {settings.sceneKey === 'school' ? '学校' : '夜の公園'}
-              </span>
-            </button>
+            {!backgroundUrl && (
+              <button
+                type="button"
+                onClick={toggleScene}
+                aria-label="シーン背景を切り替え"
+                title="シーン背景"
+                className="flex items-center gap-1 bg-secondary px-3 py-1.5 rounded-full min-h-[36px] text-foreground"
+              >
+                <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                <span className="text-xs font-medium">
+                  {settings.sceneKey === 'school' ? '学校' : '夜の公園'}
+                </span>
+              </button>
+            )}
             <div className="flex items-center gap-2 bg-secondary px-3 py-1.5 rounded-full">
               <Heart className="w-4 h-4 text-primary fill-primary" />
               <span className="text-sm font-medium text-foreground">
@@ -473,11 +594,25 @@ export default function ChatPage() {
             look={currentLook}
             className="w-full h-full"
           />
-          {gameState.isGeneratingLook && (
+          <button
+            type="button"
+            onClick={generateBackground}
+            disabled={generatingBg || gameState.isGeneratingLook}
+            aria-label="背景を生成"
+            className="absolute top-2 right-2 z-10 flex items-center gap-1 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-sm text-xs font-medium text-foreground shadow hover:bg-background disabled:opacity-60"
+          >
+            {generatingBg ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <ImagePlus className="w-3.5 h-3.5" />
+            )}
+            背景
+          </button>
+          {(gameState.isGeneratingLook || generatingBg) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/70 backdrop-blur-sm">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
               <span className="text-sm text-muted-foreground">
-                姿を思い描いています…
+                {generatingBg ? '背景を描いています…' : '姿を思い描いています…'}
               </span>
             </div>
           )}

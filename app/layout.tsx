@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Noto_Sans_JP } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { CloudSyncProvider } from '@/components/cloud-sync-provider'
 import './globals.css'
 
 const notoSansJP = Noto_Sans_JP({ 
@@ -46,6 +47,7 @@ export default function RootLayout({
   return (
     <html lang="ja" className="bg-background">
       <body className={`${notoSansJP.variable} font-sans antialiased`}>
+        <CloudSyncProvider />
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

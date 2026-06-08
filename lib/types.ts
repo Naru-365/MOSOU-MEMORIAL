@@ -18,6 +18,9 @@ export interface CharacterProfile {
   nickname?: string; // how the heroine addresses the user (optional)
   /** LLM-built one-paragraph summary used as the locked base prompt seed. */
   rawSummary?: string;
+  /** Supabase Storage URL of the generated scene background (persists via the
+   *  characters.profile jsonb column — no schema change needed). */
+  backgroundUrl?: string;
 }
 
 /** Mutable appearance attributes for a single visual snapshot (look). */
@@ -42,6 +45,10 @@ export interface Look {
   attributes: LookAttributes;
   images: Partial<Record<Emotion, string>>; // emotion -> data URL (runtime)
   referenceImage?: string; // neutral data URL used as edit reference (runtime)
+  // Supabase Storage public URLs (persisted; survive reload/cross-device since
+  // base64 `images`/`referenceImage` are stripped before persisting).
+  imageUrls?: Partial<Record<Emotion, string>>; // emotion -> Storage public URL
+  referenceImageUrl?: string; // neutral Storage public URL
   basePrompt?: string; // locked identity+look prompt used to generate
   createdAt: number;
 }

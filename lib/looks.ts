@@ -1,6 +1,13 @@
 import type { Character, Look, LookAttributes } from './types';
 
-const genId = () => Math.random().toString(36).substring(2, 15);
+// Look ids must be UUIDs to match the normalized Supabase schema (looks.id uuid).
+const fallbackUuid = () =>
+  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+const genId = () => globalThis.crypto?.randomUUID?.() ?? fallbackUuid();
 
 /** Build a Look object (metadata only; images filled in after generation). */
 export function createLook(

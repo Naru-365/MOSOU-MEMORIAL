@@ -13,6 +13,7 @@ import type {
   Look,
   Message,
 } from './types';
+import type { CharacterSessionResponse } from './api-types';
 import { defaultInterrupters } from './defaults';
 import { isFormless } from './onboarding';
 
@@ -70,11 +71,46 @@ interface AppState {
   setActiveInterrupter: (id: string | null) => void;
   resetGameState: () => void;
 
+  // Cloud sync (Supabase)
+  /** Anonymous, unguessable owner key (UUID); generated once, persisted. */
+  saveId: string;
+  setLookImageUrls: (
+    characterId: string,
+    lookId: string,
+    imageUrls: Partial<Record<Emotion, string>>,
+    referenceImageUrl?: string
+  ) => void;
+  /** Replace synced data (characters + active gameState) from a cloud snapshot. */
+  applyCloudData: (data: unknown) => void;
+  /** Restore one character's saved session (affinity + transcript) on chat entry. */
+  hydrateCharacterSession: (
+    characterId: string,
+    data: CharacterSessionResponse
+  ) => void;
+  /** One-shot flag: the next cloud push is an authorized full wipe (resetAll). */
+  pendingReset: boolean;
+  clearPendingReset: () => void;
+
   // Full reset
   resetAll: () => void;
 }
 
-const generateId = () => Math.random().toString(36).substring(2, 15);
+// UUID-shaped fallback for non-secure contexts (http, no crypto.randomUUID).
+// Must be uuid-shaped so it satisfies the DB uuid columns and the server's
+// strict uuid validation.
+const fallbackUuid = () =>
+  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+
+// All DB-backed entity ids (characters/looks/messages) and saveId/device_id are
+// UUIDs to match the normalized Supabase schema (uuid PK columns).
+const uuid = () => globalThis.crypto?.randomUUID?.() ?? fallbackUuid();
+
+const generateId = uuid;
+const generateSaveId = uuid;
 
 const initialGameState: GameState = {
   affinity: 50,
@@ -108,6 +144,8 @@ export const useAppStore = create<AppState>()(
       interrupters: defaultInterrupters,
       settings: initialSettings,
       gameState: initialGameState,
+      saveId: generateSaveId(),
+      pendingReset: false,
 
       addCharacter: (characterData) => {
         const newCharacter: Character = {
@@ -223,6 +261,82 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
+      setLookImageUrls: (characterId, lookId, imageUrls, referenceImageUrl) => {
+        set((state) => ({
+          characters: state.characters.map((c) =>
+            c.id === characterId
+              ? {
+                  ...c,
+                  looks: (c.looks ?? []).map((l) =>
+                    l.id === lookId
+                      ? {
+                          ...l,
+                          imageUrls: { ...(l.imageUrls ?? {}), ...imageUrls },
+                          referenceImageUrl:
+                            referenceImageUrl ?? l.referenceImageUrl,
+                        }
+                      : l
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : c
+          ),
+        }));
+      },
+
+      applyCloudData: (data) => {
+        if (!data || typeof data !== 'object') return;
+        const d = data as { characters?: Character[]; gameState?: GameState };
+        set((state) => {
+          const characters = Array.isArray(d.characters)
+            ? d.characters
+            : state.characters;
+          if (!d.gameState) return { characters };
+          // Null-safe the active character against the restored roster.
+          const cid = d.gameState.currentCharacterId;
+          const validCid = cid && characters.some((c) => c.id === cid) ? cid : null;
+          return {
+            characters,
+            gameState: {
+              ...initialGameState,
+              ...d.gameState,
+              currentCharacterId: validCid,
+              activeInterrupterId: null, // local-only, never synced
+              isGeneratingLook: false, // runtime-only
+            },
+          };
+        });
+        // interrupters/settings are intentionally NOT synced (local-only config).
+      },
+      clearPendingReset: () => set(() => ({ pendingReset: false })),
+
+      hydrateCharacterSession: (characterId, data) => {
+        if (!data?.found) return;
+        set((state) => {
+          // Ignore a stale response if the player already switched characters.
+          if (state.gameState.currentCharacterId !== characterId) return {};
+          const gs = data.gameState;
+          return {
+            gameState: {
+              ...state.gameState,
+              ...(gs
+                ? {
+                    affinity: gs.affinity,
+                    jealousy: gs.jealousy,
+                    turnCount: gs.turnCount,
+                    phase: gs.phase,
+                    onboardingTurn: gs.onboardingTurn,
+                  }
+                : {}),
+              messages: Array.isArray(data.messages)
+                ? data.messages
+                : state.gameState.messages,
+              isGeneratingLook: false,
+            },
+          };
+        });
+      },
+
       addInterrupter: (data) => {
         const newInterrupter: Interrupter = {
           id: generateId(),
@@ -329,17 +443,20 @@ export const useAppStore = create<AppState>()(
       },
 
       addMessage: (messageData) => {
-        const newMessage: Message = {
-          id: generateId(),
-          ...messageData,
-          timestamp: Date.now(),
-        };
-        set((state) => ({
-          gameState: {
-            ...state.gameState,
-            messages: [...state.gameState.messages, newMessage],
-          },
-        }));
+        set((state) => {
+          // Strictly-increasing timestamps so the cloud transcript (ordered by
+          // created_at) reconstructs insertion order even when several messages
+          // are added within the same millisecond.
+          const prev = state.gameState.messages[state.gameState.messages.length - 1];
+          const timestamp = prev ? Math.max(Date.now(), prev.timestamp + 1) : Date.now();
+          const newMessage: Message = { id: generateId(), ...messageData, timestamp };
+          return {
+            gameState: {
+              ...state.gameState,
+              messages: [...state.gameState.messages, newMessage],
+            },
+          };
+        });
       },
 
       clearMessages: () => {
@@ -373,6 +490,9 @@ export const useAppStore = create<AppState>()(
           gameState: initialGameState,
           interrupters: defaultInterrupters,
           settings: initialSettings,
+          // Authorize the next cloud push to wipe remote data (empty-array
+          // pushes are otherwise treated as a no-op by the sync route).
+          pendingReset: true,
         }));
       },
     }),
@@ -392,6 +512,7 @@ export const useAppStore = create<AppState>()(
           })),
         })),
         gameState: { ...state.gameState, isGeneratingLook: false },
+        pendingReset: false, // transient; never persist a pending wipe
       }),
       migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== 'object') return persisted;
@@ -420,10 +541,50 @@ export const useAppStore = create<AppState>()(
             ...initialSettings,
             ...((p.settings as Partial<AppSettings>) ?? {}),
           };
+          // Entity ids must be UUIDs to match the normalized Supabase schema
+          // (uuid PK columns). Regenerate non-UUID ids and rewrite every
+          // internal reference. Memoized + idempotent (uuid ids short-circuit).
+          const isUuid = (s: unknown): s is string =>
+            typeof s === 'string' &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+          const idMap = new Map<string, string>();
+          const remap = <T extends string | null | undefined>(old: T): T => {
+            if (old == null || isUuid(old)) return old;
+            const key = String(old);
+            let next = idMap.get(key);
+            if (!next) {
+              next = uuid();
+              idMap.set(key, next);
+            }
+            return next as T;
+          };
+          if (Array.isArray(p.characters)) {
+            p.characters = (p.characters as Character[]).map((c) => ({
+              ...c,
+              id: remap(c.id),
+              looks: (c.looks ?? []).map((l) => ({ ...l, id: remap(l.id) })),
+              currentLookId: remap(c.currentLookId),
+            }));
+          }
+          // Rewrite refs on the captured prevGame so the normalize below carries
+          // them. remap() handles null/undefined, so call it unconditionally —
+          // a falsy-but-present id must still be rewritten (no dangling base36).
+          prevGame.currentCharacterId = remap(prevGame.currentCharacterId);
+          if (Array.isArray(prevGame.messages)) {
+            prevGame.messages = (prevGame.messages as Message[]).map((m) => ({
+              ...m,
+              id: remap(m.id),
+            }));
+          }
+          // interrupter ids and activeInterrupterId stay as-is (local-only, no DB table).
         }
         p.gameState = {
           ...initialGameState,
           ...prevGame,
+          // Coalesce to null: the v4 remap above can set currentCharacterId to
+          // undefined when gameState was missing, which would violate the
+          // string | null contract via the prevGame spread.
+          currentCharacterId: prevGame.currentCharacterId ?? null,
           activeInterrupterId: prevGame.activeInterrupterId ?? null,
           turnCount: prevGame.turnCount ?? 0,
           phase: prevGame.phase ?? 'playing',
@@ -435,3 +596,36 @@ export const useAppStore = create<AppState>()(
     }
   )
 );
+
+/**
+ * Builds the normalized cloud-sync push body. Heavy base64 look images are
+ * stripped (they live in Supabase Storage; `imageUrls`/`referenceImageUrl` carry
+ * the public URLs). interrupters/settings are NOT synced (local-only config).
+ * `messages` is the active session's transcript; cloud-sync gates it by signature
+ * and may send null to skip the per-message replace. The active character's
+ * gameState is sent for the (device_id, character_id) game_states row.
+ */
+export function serializeForCloud(state: AppState) {
+  const gs = state.gameState;
+  return {
+    saveId: state.saveId,
+    activeCharacterId: gs.currentCharacterId,
+    characters: state.characters.map((c) => ({
+      ...c,
+      looks: (c.looks ?? []).map((l) => ({
+        ...l,
+        images: {},
+        referenceImage: undefined,
+      })),
+    })),
+    gameState: {
+      affinity: gs.affinity,
+      jealousy: gs.jealousy,
+      currentCharacterId: gs.currentCharacterId,
+      turnCount: gs.turnCount,
+      phase: gs.phase,
+      onboardingTurn: gs.onboardingTurn,
+    },
+    messages: gs.messages,
+  };
+}

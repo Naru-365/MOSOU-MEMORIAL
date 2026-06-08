@@ -56,3 +56,25 @@ export function buildEditPrompt(
   // Collapse doubled punctuation and extra spaces
   return raw.replace(/\.{2,}/g, '.').replace(/\s{2,}/g, ' ').trim();
 }
+
+/**
+ * Scene-background prompt. Derives the mood from the character's vibe/notes and
+ * forces an EMPTY backdrop (no people) so it can sit behind the standee.
+ */
+export function buildBackgroundPrompt(
+  profile?: CharacterProfile,
+  attributes?: LookAttributes
+): string {
+  const cues: string[] = [];
+  if (profile?.vibe) cues.push(profile.vibe);
+  if (attributes?.vibe) cues.push(attributes.vibe);
+  if (profile?.appearanceNotes) cues.push(profile.appearanceNotes);
+  const mood = cues.length ? cues.join(', ') : 'gentle everyday Japanese setting';
+  return [
+    `Empty background scene that fits this mood: ${mood}.`,
+    'Absolutely no people, no characters, no text, no logos.',
+    'Photorealistic, 35mm film photo, soft natural light, shallow depth of field,',
+    'a real Japanese everyday location, wholesome cinematic establishing shot.',
+    'Avoid: people, faces, hands, anime, illustration, 3d render, watermark, text.',
+  ].join(' ');
+}

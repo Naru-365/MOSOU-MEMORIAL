@@ -17,3 +17,8 @@ node_modules
 .next/
 .DS_Store
 tsconfig.tsbuildinfo
+
+# Local dev artifacts
+dev.log
+.serena/
+.playwright-mcp/
