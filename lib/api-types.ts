@@ -24,6 +24,8 @@ export interface ChatApiRequest {
   phase?: GamePhase;
   /** Rallies elapsed in onboarding so far (drives "wrap it up" guidance). */
   onboardingTurn?: number;
+  /** When true (playing only), pre-fetch real-world facts via Google Search. */
+  webGrounding?: boolean;
 }
 
 export type ChatApiSpeaker = 'character' | 'interrupter';

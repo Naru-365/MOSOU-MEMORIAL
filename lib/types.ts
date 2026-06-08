@@ -63,6 +63,8 @@ export interface Character {
   profile?: CharacterProfile; // filled during onboarding
   looks?: Look[]; // confirmed appearance snapshots
   currentLookId?: string | null; // active look; null/undefined => formless
+  /** Set when affinity hit 0 and she vanished. Locks the character from chat. */
+  disappeared?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -81,6 +83,9 @@ export type Emotion =
 export type InterrupterEmotion = 'intro' | 'peeved' | 'smug';
 
 export type AssetMode = 'image' | 'video' | '3d';
+
+// Chat scene backgrounds (assets under /public/images/backgrounds).
+export type SceneKey = 'school' | 'night_park';
 
 // Chat message types
 export type MessageRole = 'user' | 'character' | 'interrupter';
@@ -151,4 +156,8 @@ export interface GameState {
 export interface AppSettings {
   userName: string;
   assetMode: AssetMode;
+  /** Pull real-world facts into chat via Google Search grounding. Default off. */
+  webGrounding: boolean;
+  /** Chat scene background. */
+  sceneKey: SceneKey;
 }

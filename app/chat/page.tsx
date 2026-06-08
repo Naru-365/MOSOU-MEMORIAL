@@ -2,13 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Heart, AlertTriangle, Send, Loader2, Sparkles, ImagePlus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Heart, AlertTriangle, Send, Loader2, Sparkles, Image as ImageIcon, ImagePlus } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { CharacterDisplay } from '@/components/character-display';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { getBackgroundAsset } from '@/lib/character-asset';
+import { checkAffinityEvents } from '@/lib/affinity-events';
 import type {
   Character,
   CharacterProfile,
@@ -50,12 +53,14 @@ const ONBOARDING_OPENING =
   'ねぇ…わたし、まだ姿が無いんだ。どんな見た目がいいか、少しずつ教えてくれる？';
 
 export default function ChatPage() {
+  const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hydratedCharRef = useRef<string | null>(null);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>('neutral');
+  const [vanishing, setVanishing] = useState(false);
   const [generatingBg, setGeneratingBg] = useState(false);
   const [bgPreview, setBgPreview] = useState<string | null>(null);
 
@@ -73,6 +78,8 @@ export default function ChatPage() {
     setGeneratingLook,
     setCharacterProfile,
     addLook,
+    updateSettings,
+    markCharacterDisappeared,
     setLookImageUrls,
     hydrateCharacterSession,
   } = useAppStore();
@@ -328,6 +335,7 @@ export default function ChatPage() {
       userMessage: trimmed,
       userName: settings.userName,
       history: gameState.messages.slice(-10),
+      webGrounding: settings.webGrounding,
       ...(isOnboarding
         ? { phase: 'onboarding', onboardingTurn: gameState.onboardingTurn }
         : {}),
@@ -347,6 +355,14 @@ export default function ChatPage() {
 
       const data = (await res.json()) as ChatApiResponse;
 
+      // Affinity events are decided from the pre/post values, using the same
+      // clamp as the store so the 0-boundary matches updateAffinity.
+      const prevAffinity = gameState.affinity;
+      const nextAffinity = Math.max(
+        0,
+        Math.min(100, prevAffinity + data.affinityChange)
+      );
+
       updateAffinity(data.affinityChange);
       updateJealousy(data.jealousyChange);
 
@@ -362,6 +378,30 @@ export default function ChatPage() {
         emotion: data.emotion as Emotion | InterrupterEmotion,
         interrupterId: data.interrupterId,
       });
+
+      const affinityEvents = checkAffinityEvents(prevAffinity, nextAffinity);
+      const vanished = affinityEvents.some((e) => e.kind === 'vanish');
+      for (const ev of affinityEvents) {
+        if (ev.kind === 'milestone') {
+          addMessage({ role: 'character', content: ev.note, systemNote: true });
+        } else {
+          addMessage({
+            role: 'character',
+            content: '——彼女は静かに姿を消した。',
+            systemNote: true,
+          });
+        }
+      }
+
+      if (vanished) {
+        const vanishedId = currentCharacter.id;
+        setVanishing(true);
+        setTimeout(() => {
+          markCharacterDisappeared(vanishedId);
+          router.push('/');
+        }, 2600);
+        return;
+      }
 
       if (isOnboarding) {
         incrementOnboardingTurn();
@@ -419,11 +459,46 @@ export default function ChatPage() {
     );
   }
 
+  if (currentCharacter.disappeared) {
+    return (
+      <div className="min-h-screen bg-background pb-20">
+        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-4">
+          <div className="text-center">
+            <div className="w-20 h-20 rounded-full bg-secondary flex items-center justify-center mb-4 mx-auto">
+              <Sparkles className="w-10 h-10 text-muted-foreground" />
+            </div>
+            <p className="text-foreground font-medium mb-1">
+              {currentCharacter.name}は消えてしまった
+            </p>
+            <p className="text-muted-foreground text-sm mb-4">
+              好感度が尽き、彼女はもう戻らない。
+            </p>
+            <Link
+              href="/characters"
+              className="inline-block px-6 py-3 rounded-full bg-primary text-primary-foreground font-medium min-h-[44px]"
+            >
+              キャラクター一覧へ
+            </Link>
+          </div>
+        </div>
+        <BottomNavigation />
+      </div>
+    );
+  }
+
   const isOnboarding = gameState.phase === 'onboarding';
+  const sceneBackground = getBackgroundAsset(settings.sceneKey);
+
+  const toggleScene = () =>
+    updateSettings({
+      sceneKey: settings.sceneKey === 'school' ? 'night_park' : 'school',
+    });
 
   return (
     <div className="relative min-h-screen bg-background flex flex-col">
-      {backgroundUrl && (
+      {/* Background: AI-generated scene takes precedence; otherwise a static
+          stock scene (settings.sceneKey) so chat always has a backdrop. */}
+      {backgroundUrl ? (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -433,6 +508,15 @@ export default function ChatPage() {
             className="fixed inset-0 w-full h-full object-cover -z-10"
           />
           <div className="fixed inset-0 -z-10 bg-background/55 backdrop-blur-[1px]" />
+        </>
+      ) : (
+        <>
+          <div
+            className="fixed inset-0 -z-10 bg-cover bg-center"
+            style={{ backgroundImage: `url(${sceneBackground})` }}
+            aria-hidden
+          />
+          <div className="fixed inset-0 -z-10 bg-background/70" aria-hidden />
         </>
       )}
       {/* Header */}
@@ -464,11 +548,27 @@ export default function ChatPage() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 bg-secondary px-3 py-1.5 rounded-full">
-            <Heart className="w-4 h-4 text-primary fill-primary" />
-            <span className="text-sm font-medium text-foreground">
-              {gameState.affinity}
-            </span>
+          <div className="flex items-center gap-2">
+            {!backgroundUrl && (
+              <button
+                type="button"
+                onClick={toggleScene}
+                aria-label="シーン背景を切り替え"
+                title="シーン背景"
+                className="flex items-center gap-1 bg-secondary px-3 py-1.5 rounded-full min-h-[36px] text-foreground"
+              >
+                <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                <span className="text-xs font-medium">
+                  {settings.sceneKey === 'school' ? '学校' : '夜の公園'}
+                </span>
+              </button>
+            )}
+            <div className="flex items-center gap-2 bg-secondary px-3 py-1.5 rounded-full">
+              <Heart className="w-4 h-4 text-primary fill-primary" />
+              <span className="text-sm font-medium text-foreground">
+                {gameState.affinity}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -644,6 +744,13 @@ export default function ChatPage() {
           </Button>
         </div>
       </div>
+
+      {vanishing && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black text-white/90 animate-in fade-in duration-1000">
+          <Sparkles className="w-8 h-8 opacity-70" />
+          <p className="text-sm tracking-widest">彼女は消えた…</p>
+        </div>
+      )}
 
       <BottomNavigation />
     </div>

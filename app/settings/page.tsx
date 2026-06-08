@@ -85,6 +85,38 @@ export default function SettingsPage() {
           />
         </Card>
 
+        {/* Web search grounding */}
+        <Card className="p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-foreground">現実の話題を会話に反映</h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                Web検索で実在の情報を取り込みます（応答が少し遅くなります）
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.webGrounding}
+              aria-label="現実の話題を会話に反映"
+              onClick={() =>
+                updateSettings({ webGrounding: !settings.webGrounding })
+              }
+              className={
+                'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ' +
+                (settings.webGrounding ? 'bg-primary' : 'bg-secondary')
+              }
+            >
+              <span
+                className={
+                  'inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ' +
+                  (settings.webGrounding ? 'translate-x-6' : 'translate-x-1')
+                }
+              />
+            </button>
+          </div>
+        </Card>
+
         {/* Interrupters management */}
         <Card className="p-0 overflow-hidden">
           <Link

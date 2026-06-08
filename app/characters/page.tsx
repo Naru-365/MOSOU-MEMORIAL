@@ -44,9 +44,13 @@ export default function CharacterListPage() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4">
-            {characters.map((character) => (
-              <Link key={character.id} href={`/characters/${character.id}`}>
-                <Card className="overflow-hidden hover:shadow-lg transition-shadow">
+            {characters.map((character) =>
+              character.disappeared ? (
+                <Card
+                  key={character.id}
+                  className="overflow-hidden opacity-50 grayscale cursor-not-allowed"
+                  aria-disabled
+                >
                   <div className="aspect-square bg-secondary relative">
                     <div className="absolute inset-0 flex items-center justify-center">
                       <span className="text-4xl text-muted-foreground">
@@ -58,16 +62,36 @@ export default function CharacterListPage() {
                     <h3 className="font-medium text-foreground truncate">
                       {character.name}
                     </h3>
-                    <div className="flex items-center gap-1 mt-1">
-                      <Heart className="w-3 h-3 text-primary fill-primary" />
-                      <span className="text-xs text-muted-foreground">
-                        50
-                      </span>
-                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      消えてしまった
+                    </p>
                   </div>
                 </Card>
-              </Link>
-            ))}
+              ) : (
+                <Link key={character.id} href={`/characters/${character.id}`}>
+                  <Card className="overflow-hidden hover:shadow-lg transition-shadow">
+                    <div className="aspect-square bg-secondary relative">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-4xl text-muted-foreground">
+                          {character.name.charAt(0)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="p-3">
+                      <h3 className="font-medium text-foreground truncate">
+                        {character.name}
+                      </h3>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Heart className="w-3 h-3 text-primary fill-primary" />
+                        <span className="text-xs text-muted-foreground">
+                          50
+                        </span>
+                      </div>
+                    </div>
+                  </Card>
+                </Link>
+              )
+            )}
 
             {/* Add New Card */}
             <Link href="/characters/new">

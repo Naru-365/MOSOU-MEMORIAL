@@ -19,6 +19,54 @@ import type {
 
 export const runtime = 'nodejs';
 
+// Single source of truth for the chat model. Verify available ids for your key
+// with `node scripts/list-models.mjs`, then bump this to the newest Flash id.
+const CHAT_MODEL = 'gemini-2.5-flash';
+
+// --- Web search grounding (Phase 3) ---
+// tools:[{ googleSearch:{} }] cannot be combined with responseSchema/JSON mode,
+// so we use a 2-stage flow: stage 1 fetches plain-text facts via search, stage 2
+// injects them into the structured generation's systemInstruction.
+
+/**
+ * Heuristic: return a search query when the message looks like it references the
+ * real world (a question or likely real-world topic), else null (skip grounding).
+ */
+function extractGroundingQuery(userMessage: string): string | null {
+  const text = userMessage.trim();
+  if (text.length < 4) return null;
+  const looksReal =
+    /[?？]/.test(text) ||
+    /(って|とは|どう|なに|何|ニュース|最近|今日|天気|流行|話題|誰|どこ|いつ)/.test(
+      text
+    );
+  if (!looksReal) return null;
+  return text.slice(0, 200);
+}
+
+/**
+ * Stage 1: fetch a short factual snippet via Google Search grounding. Returns
+ * null on any failure so chat falls back to ungrounded generation.
+ */
+async function fetchRealWorldContext(
+  ai: GoogleGenAI,
+  query: string
+): Promise<string | null> {
+  try {
+    const result = await ai.models.generateContent({
+      model: CHAT_MODEL,
+      contents: `次の話題について、会話で使える事実を2〜3文の日本語で簡潔にまとめて。憶測は避け、分からなければ「不明」とだけ書いて。\n話題: ${query}`,
+      config: { tools: [{ googleSearch: {} }] },
+    });
+    const text = result.text?.trim();
+    if (!text || text.length < 2 || text === '不明') return null;
+    return text.slice(0, 800);
+  } catch (err) {
+    console.error('[api/chat] grounding fetch failed:', err);
+    return null;
+  }
+}
+
 const HEROINE_EMOTIONS: Emotion[] = [
   'neutral',
   'happy',
@@ -251,6 +299,7 @@ export async function POST(req: NextRequest) {
 
   const phase = body.phase ?? 'playing';
   const onboardingTurn = body.onboardingTurn ?? 0;
+  const webGrounding = body.webGrounding ?? false;
 
   if (!character || !userMessage?.trim()) {
     return NextResponse.json<ChatApiError>(
@@ -273,7 +322,7 @@ export async function POST(req: NextRequest) {
 
     try {
       const result = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: CHAT_MODEL,
         contents,
         config: {
           systemInstruction,
@@ -344,7 +393,7 @@ export async function POST(req: NextRequest) {
       recentText: userMessage,
     });
 
-    const systemInstruction = interrupter
+    const baseSystemInstruction = interrupter
       ? buildInterrupterSystemPrompt(
           interrupter,
           character,
@@ -360,9 +409,22 @@ export async function POST(req: NextRequest) {
           gameState.turnCount
         );
 
+    // Stage 1: optional real-world grounding (heroine only, opt-in via setting).
+    let groundingNote = '';
+    if (!interrupter && webGrounding) {
+      const query = extractGroundingQuery(userMessage);
+      if (query) {
+        const facts = await fetchRealWorldContext(ai, query);
+        if (facts) {
+          groundingNote = `\n\n# 現実の参考情報（会話に自然に織り込む。不確かなら触れない）\n${facts}`;
+        }
+      }
+    }
+    const systemInstruction = baseSystemInstruction + groundingNote;
+
     try {
       const result = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: CHAT_MODEL,
         contents,
         config: {
           systemInstruction,
