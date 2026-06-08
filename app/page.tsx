@@ -27,49 +27,50 @@ export default function TitleScreen() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center bg-background px-6">
-      <div className="flex flex-col items-center gap-8 text-center">
-        {/* Title */}
-        <div className="flex flex-col items-center gap-2">
-          <div className="relative">
-            <h1 className="text-4xl font-bold text-accent tracking-wider">
-              妄想メモリアル
-            </h1>
-            <span className="absolute -top-2 -right-8 text-[10px] font-semibold tracking-widest text-primary-foreground bg-primary px-2 py-0.5 rounded-full">
-              BETA
-            </span>
-          </div>
-          <p className="text-lg text-muted-foreground tracking-widest">
-            MOSOU MEMORIAL
-          </p>
-        </div>
+    <main className="min-h-screen w-full flex flex-col items-center justify-center bg-background px-4 py-6 overflow-hidden">
+      {/* Visible title lives in the key art; keep an accessible heading. */}
+      <h1 className="sr-only">妄想メモリアル ― MOSOU MEMORIAL</h1>
 
-        {/* Decorative element */}
-        <div className="w-24 h-0.5 bg-primary rounded-full" />
-
-        {/* Start Button */}
-        <Link href="/characters" className="w-full max-w-xs">
-          <Button
-            size="lg"
-            className="w-full h-14 text-lg font-medium rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg"
-          >
-            はじめる
-          </Button>
+      <div className="relative w-full max-w-5xl flex flex-col items-center gap-7">
+        {/* Key visual = the title screen. Click anywhere to start (PRESS ANY KEY). */}
+        <Link
+          href="/characters"
+          aria-label="はじめる"
+          className="block w-full rounded-2xl overflow-hidden shadow-2xl ring-1 ring-border/40 transition-transform duration-300 hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/title-key-visual.png"
+            alt="妄想メモリアル ― 会話で、相手の姿が変わっていく立ち絵会話シミュレーション"
+            className="w-full h-auto select-none"
+            draggable={false}
+            fetchPriority="high"
+          />
         </Link>
 
-        {/* Footer Icons */}
-        <div className="flex items-center gap-6 mt-8">
-          <button
-            className="p-3 rounded-full bg-card hover:bg-secondary transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+        {/* Controls */}
+        <div className="flex items-center gap-4">
+          <Link href="/characters">
+            <Button
+              size="lg"
+              className="h-14 px-12 text-lg font-bold rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg"
+            >
+              はじめる
+            </Button>
+          </Link>
+
+          <Link
+            href="/settings"
+            className="p-3 rounded-full bg-card hover:bg-secondary transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center shadow"
             aria-label="設定"
           >
             <Settings className="w-6 h-6 text-accent" />
-          </button>
+          </Link>
 
           <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
             <AlertDialogTrigger asChild>
               <button
-                className="p-3 rounded-full bg-card hover:bg-secondary transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+                className="p-3 rounded-full bg-card hover:bg-secondary transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center shadow"
                 aria-label="データリセット"
               >
                 <RotateCcw className="w-6 h-6 text-accent" />
