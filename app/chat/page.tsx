@@ -22,6 +22,7 @@ import type {
   ChatApiError,
   ChatApiRequest,
   ChatApiResponse,
+  GenerateLookError,
   GenerateLookRequest,
   GenerateLookResponse,
   UploadLookResponse,
@@ -207,14 +208,17 @@ export default function ChatPage() {
       });
 
       if (!res.ok) {
-        // 503 NO_IMAGE_API or any error -> degrade to a silhouette look.
+        // Distinguish "no key" from "generation failed" so the note is accurate.
+        const err = (await res
+          .json()
+          .catch(() => null)) as GenerateLookError | null;
+        console.error('[generate-look] failed:', res.status, err);
+        const note =
+          err?.code === 'NO_IMAGE_API'
+            ? '（画像生成キー(OPENAI_API_KEY)が未設定のため、シルエットで進めるよ）'
+            : '（立ち絵の生成に失敗したみたい。シルエットで進めるね）';
         addLook(charId, createLook('初期(仮)', {}));
-        addMessage({
-          role: 'character',
-          content:
-            '（画像生成キーが未設定のため、姿はシルエットのままで進めるよ）',
-          systemNote: true,
-        });
+        addMessage({ role: 'character', content: note, systemNote: true });
         return;
       }
 
@@ -229,12 +233,12 @@ export default function ChatPage() {
         content: `（${character.name}が姿を現した！）`,
         systemNote: true,
       });
-    } catch {
+    } catch (e) {
+      console.error('[generate-look] error:', e);
       addLook(charId, createLook('初期(仮)', {}));
       addMessage({
         role: 'character',
-        content:
-          '（画像生成キーが未設定のため、姿はシルエットのままで進めるよ）',
+        content: '（立ち絵の生成に失敗したみたい。シルエットで進めるね）',
         systemNote: true,
       });
     } finally {
@@ -414,8 +418,10 @@ export default function ChatPage() {
         }
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'API呼び出し失敗';
-      setErrorMsg(message);
+      // Gemini occasionally returns malformed/truncated JSON. Don't show the raw
+      // technical error; keep it in the console and prompt a friendly retry.
+      console.error('[chat] send failed:', e);
+      setErrorMsg('うまく返事を作れなかったみたい。もう一度送ってみてね。');
     } finally {
       setIsSending(false);
     }

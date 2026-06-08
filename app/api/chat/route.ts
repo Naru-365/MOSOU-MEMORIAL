@@ -329,6 +329,8 @@ export async function POST(req: NextRequest) {
           responseMimeType: 'application/json',
           responseSchema: onboardingResponseSchema,
           temperature: 0.9,
+          // Cap output so a model runaway can't produce a giant truncated JSON.
+          maxOutputTokens: 1200,
         },
       });
 
@@ -429,6 +431,8 @@ export async function POST(req: NextRequest) {
           responseMimeType: 'application/json',
           responseSchema,
           temperature: 0.9,
+          // Cap output so a model runaway can't produce a giant truncated JSON.
+          maxOutputTokens: 1200,
         },
       });
 
