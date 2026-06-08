@@ -128,7 +128,6 @@ const initialSettings: AppSettings = {
   userName: 'プレイヤー',
   assetMode: 'image',
   webGrounding: false,
-  sceneKey: 'school',
 };
 
 /** Compute the starting phase for a character: formless -> onboarding. */
@@ -579,7 +578,7 @@ export const useAppStore = create<AppState>()(
             : [];
         }
         if (version < 4) {
-          // Backfill new settings (webGrounding / sceneKey).
+          // Backfill new settings (webGrounding).
           p.settings = {
             ...initialSettings,
             ...((p.settings as Partial<AppSettings>) ?? {}),

@@ -36,6 +36,10 @@ export async function POST(req: NextRequest) {
   }
 
   const { saveId, characterId, characterName, profile, attributes } = body;
+  const sceneDescription =
+    typeof body.sceneDescription === 'string'
+      ? body.sceneDescription.slice(0, 300)
+      : undefined;
   if (!characterName?.trim()) {
     return NextResponse.json<GenerateBackgroundError>(
       { error: 'characterName is required', code: 'BAD_REQUEST' },
@@ -49,7 +53,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const prompt = buildBackgroundPrompt(profile, attributes);
+  const prompt = buildBackgroundPrompt(profile, attributes, sceneDescription);
 
   // Generate one background (retry once on a transient failure).
   const generate = async (): Promise<string | null> => {

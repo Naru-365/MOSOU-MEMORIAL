@@ -63,15 +63,21 @@ export function buildEditPrompt(
  */
 export function buildBackgroundPrompt(
   profile?: CharacterProfile,
-  attributes?: LookAttributes
+  attributes?: LookAttributes,
+  sceneDescription?: string
 ): string {
   const cues: string[] = [];
   if (profile?.vibe) cues.push(profile.vibe);
   if (attributes?.vibe) cues.push(attributes.vibe);
   if (profile?.appearanceNotes) cues.push(profile.appearanceNotes);
   const mood = cues.length ? cues.join(', ') : 'gentle everyday Japanese setting';
+  // A specific location from the conversation takes precedence; the mood still
+  // tints it. With no location, fall back to a mood-only empty scene.
+  const scene = sceneDescription?.trim()
+    ? `Location/scene: ${sceneDescription.trim()}. Mood: ${mood}.`
+    : `Empty background scene that fits this mood: ${mood}.`;
   return [
-    `Empty background scene that fits this mood: ${mood}.`,
+    scene,
     'Absolutely no people, no characters, no text, no logos.',
     'Photorealistic, 35mm film photo, soft natural light, shallow depth of field,',
     'a real Japanese everyday location, wholesome cinematic establishing shot.',

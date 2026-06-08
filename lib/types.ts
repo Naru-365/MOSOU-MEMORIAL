@@ -84,9 +84,6 @@ export type InterrupterEmotion = 'intro' | 'peeved' | 'smug';
 
 export type AssetMode = 'image' | 'video' | '3d';
 
-// Chat scene backgrounds (assets under /public/images/backgrounds).
-export type SceneKey = 'school' | 'night_park';
-
 // Chat message types
 export type MessageRole = 'user' | 'character' | 'interrupter';
 
@@ -158,6 +155,4 @@ export interface AppSettings {
   assetMode: AssetMode;
   /** Pull real-world facts into chat via Google Search grounding. Default off. */
   webGrounding: boolean;
-  /** Chat scene background. */
-  sceneKey: SceneKey;
 }

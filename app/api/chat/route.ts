@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
 
 // Single source of truth for the chat model. Verify available ids for your key
 // with `node scripts/list-models.mjs`, then bump this to the newest Flash id.
-const CHAT_MODEL = 'gemini-2.5-flash';
+const CHAT_MODEL = 'gemini-3.5-flash';
 
 // --- Web search grounding (Phase 3) ---
 // tools:[{ googleSearch:{} }] cannot be combined with responseSchema/JSON mode,

@@ -108,6 +108,9 @@ export interface GenerateBackgroundRequest {
   characterName: string;
   profile?: CharacterProfile;
   attributes?: LookAttributes;
+  /** Free-text location/scene to render (e.g. from conversation). Drives the
+   *  background when present; otherwise the prompt falls back to mood cues. */
+  sceneDescription?: string;
 }
 
 export interface GenerateBackgroundResponse {
