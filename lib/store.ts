@@ -24,6 +24,8 @@ interface AppState {
   ) => Character;
   updateCharacter: (id: string, updates: Partial<Character>) => void;
   deleteCharacter: (id: string) => void;
+  /** Lock a character after she vanished at affinity 0 (data is kept). */
+  markCharacterDisappeared: (id: string) => void;
   getCharacter: (id: string) => Character | undefined;
 
   // Looks (appearance snapshots) + onboarding profile
@@ -89,6 +91,8 @@ const initialGameState: GameState = {
 const initialSettings: AppSettings = {
   userName: 'プレイヤー',
   assetMode: 'image',
+  webGrounding: false,
+  sceneKey: 'school',
 };
 
 /** Compute the starting phase for a character: formless -> onboarding. */
@@ -133,6 +137,20 @@ export const useAppStore = create<AppState>()(
       deleteCharacter: (id) => {
         set((state) => ({
           characters: state.characters.filter((char) => char.id !== id),
+          gameState:
+            state.gameState.currentCharacterId === id
+              ? initialGameState
+              : state.gameState,
+        }));
+      },
+
+      markCharacterDisappeared: (id) => {
+        set((state) => ({
+          characters: state.characters.map((c) =>
+            c.id === id
+              ? { ...c, disappeared: true, currentLookId: null, updatedAt: Date.now() }
+              : c
+          ),
           gameState:
             state.gameState.currentCharacterId === id
               ? initialGameState
@@ -360,7 +378,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'mosou-memorial-storage',
-      version: 3,
+      version: 4,
       // Strip heavy base64 look images before writing to localStorage (quota is
       // ~5-10MB). Metadata + basePrompt persist so a look can be regenerated.
       partialize: (state) => ({
@@ -395,6 +413,13 @@ export const useAppStore = create<AppState>()(
                 currentLookId: c.currentLookId ?? null,
               }))
             : [];
+        }
+        if (version < 4) {
+          // Backfill new settings (webGrounding / sceneKey).
+          p.settings = {
+            ...initialSettings,
+            ...((p.settings as Partial<AppSettings>) ?? {}),
+          };
         }
         p.gameState = {
           ...initialGameState,
