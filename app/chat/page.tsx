@@ -3,14 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, AlertTriangle, Send, Loader2, Sparkles, Image as ImageIcon, ImagePlus } from 'lucide-react';
+import { Heart, AlertTriangle, Send, Loader2, Sparkles, ImagePlus } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { BottomNavigation } from '@/components/bottom-navigation';
 import { CharacterDisplay } from '@/components/character-display';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { getBackgroundAsset } from '@/lib/character-asset';
 import { checkAffinityEvents } from '@/lib/affinity-events';
 import type {
   Character,
@@ -32,6 +31,7 @@ import type {
 } from '@/lib/api-types';
 import { getCurrentLook, detectLookChange, createLook, mergeLookAttributes } from '@/lib/looks';
 import type { LookChangeIntent } from '@/lib/looks';
+import { detectSceneChange } from '@/lib/scenes';
 import { ONBOARDING_TARGET_RALLIES } from '@/lib/onboarding';
 
 const HEROINE_EMOTIONS: Emotion[] = [
@@ -78,7 +78,6 @@ export default function ChatPage() {
     setGeneratingLook,
     setCharacterProfile,
     addLook,
-    updateSettings,
     markCharacterDisappeared,
     setLookImageUrls,
     hydrateCharacterSession,
@@ -149,7 +148,7 @@ export default function ChatPage() {
   }, [gameState.currentCharacterId, hydrateCharacterSession]);
 
   // --- Scene background generation -------------------------------------------
-  const generateBackground = async () => {
+  const generateBackground = async (sceneDescription?: string) => {
     if (!currentCharacter || generatingBg) return;
     setGeneratingBg(true);
     setErrorMsg(null);
@@ -161,6 +160,7 @@ export default function ChatPage() {
         characterName: currentCharacter.name,
         profile: currentCharacter.profile,
         attributes: currentLook?.attributes,
+        sceneDescription,
       };
       const res = await fetch('/api/generate-background', {
         method: 'POST',
@@ -416,6 +416,11 @@ export default function ChatPage() {
         if (intent && currentLook) {
           await triggerLookChange(currentCharacter, intent);
         }
+        const sceneIntent = detectSceneChange(trimmed);
+        if (sceneIntent && !generatingBg) {
+          // fire-and-forget: failures surface via errorMsg, game keeps going.
+          void generateBackground(sceneIntent.sceneDescription);
+        }
       }
     } catch (e) {
       // Gemini occasionally returns malformed/truncated JSON. Don't show the raw
@@ -487,18 +492,12 @@ export default function ChatPage() {
   }
 
   const isOnboarding = gameState.phase === 'onboarding';
-  const sceneBackground = getBackgroundAsset(settings.sceneKey);
-
-  const toggleScene = () =>
-    updateSettings({
-      sceneKey: settings.sceneKey === 'school' ? 'night_park' : 'school',
-    });
 
   return (
     <div className="relative min-h-screen bg-background flex flex-col">
-      {/* Background: AI-generated scene takes precedence; otherwise a static
-          stock scene (settings.sceneKey) so chat always has a backdrop. */}
-      {backgroundUrl ? (
+      {/* Background: a plain backdrop by default. An AI-generated scene (from the
+          conversation or the manual button) takes over when available. */}
+      {backgroundUrl && (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -508,15 +507,6 @@ export default function ChatPage() {
             className="fixed inset-0 w-full h-full object-cover -z-10"
           />
           <div className="fixed inset-0 -z-10 bg-background/55 backdrop-blur-[1px]" />
-        </>
-      ) : (
-        <>
-          <div
-            className="fixed inset-0 -z-10 bg-cover bg-center"
-            style={{ backgroundImage: `url(${sceneBackground})` }}
-            aria-hidden
-          />
-          <div className="fixed inset-0 -z-10 bg-background/70" aria-hidden />
         </>
       )}
       {/* Header */}
@@ -549,20 +539,6 @@ export default function ChatPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {!backgroundUrl && (
-              <button
-                type="button"
-                onClick={toggleScene}
-                aria-label="シーン背景を切り替え"
-                title="シーン背景"
-                className="flex items-center gap-1 bg-secondary px-3 py-1.5 rounded-full min-h-[36px] text-foreground"
-              >
-                <ImageIcon className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs font-medium">
-                  {settings.sceneKey === 'school' ? '学校' : '夜の公園'}
-                </span>
-              </button>
-            )}
             <div className="flex items-center gap-2 bg-secondary px-3 py-1.5 rounded-full">
               <Heart className="w-4 h-4 text-primary fill-primary" />
               <span className="text-sm font-medium text-foreground">
@@ -602,7 +578,7 @@ export default function ChatPage() {
           />
           <button
             type="button"
-            onClick={generateBackground}
+            onClick={() => generateBackground()}
             disabled={generatingBg || gameState.isGeneratingLook}
             aria-label="背景を生成"
             className="absolute top-2 right-2 z-10 flex items-center gap-1 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-sm text-xs font-medium text-foreground shadow hover:bg-background disabled:opacity-60"

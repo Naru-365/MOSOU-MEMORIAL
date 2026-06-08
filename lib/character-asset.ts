@@ -7,10 +7,7 @@ import type {
   InterrupterArchetype,
   InterrupterEmotion,
   Look,
-  SceneKey,
 } from './types';
-
-export type { SceneKey };
 
 const appearanceSlugMap: Record<Appearance, string> = {
   '清楚系': 'seiso',
@@ -123,8 +120,4 @@ export function getInterrupterAsset(
     src: `/images/interrupters/${slug}/${emotion}.${ext}`,
     fallback: `/images/interrupters/${slug}/intro.${ext}`,
   };
-}
-
-export function getBackgroundAsset(scene: SceneKey = 'school'): string {
-  return `/images/backgrounds/${scene}.png`;
 }

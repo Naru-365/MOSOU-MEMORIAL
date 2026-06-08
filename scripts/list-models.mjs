@@ -2,14 +2,13 @@
 //
 // Why: the chat model id is centralized as CHAT_MODEL in app/api/chat/route.ts.
 // Before bumping it, run this to confirm the exact id exists for your key
-// (model ids are not guessable — there is no "gemini-3.5-flash" today).
+// (model ids are not guessable — verify the string against this list).
 //
 // Usage:
 //   GEMINI_API_KEY=your_key node scripts/list-models.mjs
 //
-// Then pick the newest Flash id that prints (e.g. a future gemini-3.x-flash)
-// and set CHAT_MODEL accordingly. If none newer than gemini-2.5-flash exists,
-// leave CHAT_MODEL as is.
+// Then pick the newest Flash id that prints and set CHAT_MODEL accordingly.
+// CHAT_MODEL is currently gemini-3.5-flash; bump it if a newer Flash appears.
 import { GoogleGenAI } from '@google/genai';
 
 const apiKey = process.env.GEMINI_API_KEY;

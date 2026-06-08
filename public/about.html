@@ -308,11 +308,11 @@
   <thead><tr><th>領域</th><th>状態</th><th>メモ</th></tr></thead>
   <tbody>
     <tr><td>ロジック層</td><td><span class="badge good">完成</span></td><td>キャラ／邪魔者／好感度／嫉妬度／トリガ／テンプレ全て実装済み</td></tr>
-    <tr><td>Gemini会話</td><td><span class="badge good">完成</span></td><td><code>gemini-2.5-flash</code> + Structured JSON Output で動作中</td></tr>
+    <tr><td>Gemini会話</td><td><span class="badge good">完成</span></td><td><code>gemini-3.5-flash</code> + Structured JSON Output で動作中</td></tr>
     <tr><td>画像（清楚系）</td><td><span class="badge warn">5/8</span></td><td>angry / surprised / laugh が未着、フォールバックで動作</td></tr>
     <tr><td>画像（邪魔者ツッコミ部長）</td><td><span class="badge good">3/3</span></td><td>intro / peeved / smug 揃い</td></tr>
     <tr><td>画像（邪魔者 夜々子・メタくん）</td><td><span class="badge bad">0/6</span></td><td>未生成、デフォルトアイコンで代替</td></tr>
-    <tr><td>背景</td><td><span class="badge good">2/2</span></td><td>school / night_park 揃い（現状チャット画面では未使用）</td></tr>
+    <tr><td>背景</td><td><span class="badge warn">AI生成</span></td><td>デフォルトは無地。会話で場所/イベント（「海に行きたい」等）が出たら <code>gpt-image-2</code> でシーン背景を生成・切替。静的シーン（学校/夜の公園）は撤去</td></tr>
     <tr><td>UI</td><td><span class="badge warn">仮置き</span></td><td>v0 (Vercel) で生成した土台。差し替え前提だが、ロジック側は触らずUIだけ刷新可能な構造</td></tr>
     <tr><td>会話オンボーディング</td><td><span class="badge warn">実装(beta)</span></td><td>実体なし→約10ラリーでヒアリング→立ち絵生成。実機検証これから</td></tr>
     <tr><td>外見の動的変化</td><td><span class="badge warn">実装(beta)</span></td><td>lookId管理・美容院/服/加齢/タイムスリップ/犬…で再生成。実機検証これから</td></tr>
@@ -371,7 +371,7 @@
       <li>1リクエストで <code>{reply, affinityChange, jealousyChange, emotion}</code> を取得</li>
       <li>サーバ側でクランプ <code>[-15, +15]</code></li>
     </ul>
-    <p class="small muted">エンドポイント: <code>POST /api/chat</code> ／ モデル: <code>gemini-2.5-flash</code></p>
+    <p class="small muted">エンドポイント: <code>POST /api/chat</code> ／ モデル: <code>gemini-3.5-flash</code></p>
   </div>
 
   <div class="card">
@@ -537,7 +537,7 @@
     <tr><td>フレームワーク</td><td>Next.js 16 (Turbopack)</td><td>App Router、Route Handler で API実装</td></tr>
     <tr><td>UI</td><td>React 19 + Tailwind v4</td><td>Radix UI コンポーネント、shadcn/ui スタイル</td></tr>
     <tr><td>状態管理</td><td>Zustand + persist</td><td>localStorage、v2マイグレーション</td></tr>
-    <tr><td>LLM（会話）</td><td>Gemini API (<code>@google/genai</code>)</td><td><code>gemini-2.5-flash</code>、Structured JSON Output</td></tr>
+    <tr><td>LLM（会話）</td><td>Gemini API (<code>@google/genai</code>)</td><td><code>gemini-3.5-flash</code>、Structured JSON Output</td></tr>
     <tr><td>画像生成</td><td><code>gpt-image-2</code> (OpenAI GPT Image)</td><td>エンドポイント <code>POST /api/generate-look</code>・要 <code>OPENAI_API_KEY</code>。Edits に neutral を参照画像として渡し表情差分を生成（入力は常に高忠実度処理）。1枚 ≒ $0.005(low)〜$0.165(high)</td></tr>
     <tr><td>UI生成</td><td>v0 (Vercel)</td><td>画面の土台を生成。ロジックは別途実装</td></tr>
     <tr><td>デプロイ</td><td>Vercel</td><td>Preview URL でこの画面を共有中</td></tr>
