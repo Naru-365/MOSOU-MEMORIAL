@@ -47,47 +47,32 @@ export async function POST(req: NextRequest) {
 
   const images: Partial<Record<Emotion, string>> = {};
 
-  try {
-    for (const emotion of emotions) {
-      let b64: string | undefined;
-
+  // Generate one emotion. Returns the data URL, or null on any failure (never
+  // throws for an OpenAI non-ok) so callers can degrade gracefully.
+  const generateOne = async (emotion: Emotion): Promise<string | null> => {
+    try {
+      let res: Response;
       if (referenceImage) {
         // EDITS endpoint — identity-preserving
         const b64Input = referenceImage.replace(/^data:[^;]+;base64,/, '');
         const buf = Buffer.from(b64Input, 'base64');
-
         const form = new FormData();
         form.append('model', 'gpt-image-2');
         form.append('prompt', buildEditPrompt(base, changeInstruction, emotion));
         form.append('size', size);
         form.append('quality', quality);
         form.append('image[]', new Blob([buf], { type: 'image/png' }), 'reference.png');
-
-        const res = await fetch('https://api.openai.com/v1/images/edits', {
+        // Do NOT set Content-Type; FormData sets the boundary automatically.
+        res = await fetch('https://api.openai.com/v1/images/edits', {
           method: 'POST',
           headers: { Authorization: `Bearer ${apiKey}` },
-          // Do NOT set Content-Type; FormData sets the boundary automatically
           body: form,
         });
-
-        if (!res.ok) {
-          const errText = await res.text().catch(() => res.statusText);
-          return NextResponse.json<GenerateLookError>(
-            { error: `OpenAI edits failed for emotion '${emotion}': ${errText}`, code: 'OPENAI_FAILED' },
-            { status: 502 }
-          );
-        }
-
-        const json = (await res.json()) as { data?: { b64_json?: string }[] };
-        b64 = json.data?.[0]?.b64_json;
       } else {
         // GENERATIONS endpoint — first look
-        const res = await fetch('https://api.openai.com/v1/images/generations', {
+        res = await fetch('https://api.openai.com/v1/images/generations', {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: 'gpt-image-2',
             prompt: buildLookPromptForEmotion(base, emotion),
@@ -96,45 +81,53 @@ export async function POST(req: NextRequest) {
             n: 1,
           }),
         });
-
-        if (!res.ok) {
-          const errText = await res.text().catch(() => res.statusText);
-          return NextResponse.json<GenerateLookError>(
-            { error: `OpenAI generations failed for emotion '${emotion}': ${errText}`, code: 'OPENAI_FAILED' },
-            { status: 502 }
-          );
-        }
-
-        const json = (await res.json()) as { data?: { b64_json?: string }[] };
-        b64 = json.data?.[0]?.b64_json;
       }
-
-      if (!b64) {
-        return NextResponse.json<GenerateLookError>(
-          { error: `No image data returned by OpenAI for emotion '${emotion}'`, code: 'OPENAI_FAILED' },
-          { status: 502 }
-        );
+      if (!res.ok) {
+        const errText = await res.text().catch(() => res.statusText);
+        console.error(`[api/generate-look] '${emotion}' failed (${res.status}): ${errText.slice(0, 300)}`);
+        return null;
       }
-
-      images[emotion] = `data:image/png;base64,${b64}`;
+      const json = (await res.json()) as { data?: { b64_json?: string }[] };
+      const b64 = json.data?.[0]?.b64_json;
+      return b64 ? `data:image/png;base64,${b64}` : null;
+    } catch (err) {
+      console.error('[api/generate-look]', emotion, err);
+      return null;
     }
+  };
 
-    const referenceImageOut = images['neutral']!;
+  // 'neutral' is the reference image and MUST succeed (retry once on a transient
+  // failure). Other emotions are best-effort: a failure degrades to the neutral
+  // image (see resolveCharacterAsset) instead of failing the whole look — so a
+  // single flaky generation never drops the user back to a silhouette.
+  for (const emotion of emotions) {
+    const required = emotion === 'neutral';
+    let img = await generateOne(emotion);
+    if (!img && required) {
+      img = await generateOne(emotion); // one retry for the reference
+    }
+    if (img) {
+      images[emotion] = img;
+    } else if (required) {
+      return NextResponse.json<GenerateLookError>(
+        { error: 'OpenAI failed to generate the reference (neutral) image', code: 'OPENAI_FAILED' },
+        { status: 502 }
+      );
+    }
+  }
 
-    return NextResponse.json<GenerateLookResponse>({
-      images,
-      referenceImage: referenceImageOut,
-      basePrompt: base,
-      attributes: attributes ?? {},
-    });
-  } catch (err) {
-    console.error('[api/generate-look]', err);
+  const referenceImageOut = images['neutral'];
+  if (!referenceImageOut) {
     return NextResponse.json<GenerateLookError>(
-      {
-        error: err instanceof Error ? err.message : 'Unknown error during image generation',
-        code: 'OPENAI_FAILED',
-      },
+      { error: 'No neutral image available as reference', code: 'OPENAI_FAILED' },
       { status: 502 }
     );
   }
+
+  return NextResponse.json<GenerateLookResponse>({
+    images,
+    referenceImage: referenceImageOut,
+    basePrompt: base,
+    attributes: attributes ?? {},
+  });
 }

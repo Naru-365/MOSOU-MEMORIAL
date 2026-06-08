@@ -18,6 +18,9 @@ export interface CharacterProfile {
   nickname?: string; // how the heroine addresses the user (optional)
   /** LLM-built one-paragraph summary used as the locked base prompt seed. */
   rawSummary?: string;
+  /** Supabase Storage URL of the generated scene background (persists via the
+   *  characters.profile jsonb column — no schema change needed). */
+  backgroundUrl?: string;
 }
 
 /** Mutable appearance attributes for a single visual snapshot (look). */
