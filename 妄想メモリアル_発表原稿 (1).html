@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自己紹介 発表原稿 ｜ 妄想メモリアル開発 ｜ 松本 孝祐</title>
+<style>
+  :root{
+    --navy:#1B365D;
+    --yellow:#FFCD00;
+    --ink:#1f2733;
+    --sub:#5b6675;
+    --line:#e3e8ef;
+    --bg:#f6f8fb;
+    --card:#ffffff;
+    --fill:#fff8db;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Yu Gothic","Hiragino Kaku Gothic ProN","Meiryo",sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+    line-height:1.85;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:0 24px 96px;}
+  header.hero{
+    background:linear-gradient(135deg,var(--navy) 0%,#26477a 100%);
+    color:#fff;
+    padding:48px 24px 40px;
+    margin-bottom:32px;
+    border-bottom:6px solid var(--yellow);
+  }
+  header.hero .inner{max-width:880px;margin:0 auto;}
+  .tag{
+    display:inline-block;background:var(--yellow);color:var(--navy);
+    font-weight:700;font-size:13px;letter-spacing:.04em;
+    padding:4px 12px;border-radius:999px;margin-bottom:16px;
+  }
+  header.hero h1{font-size:30px;margin:0 0 8px;line-height:1.4;}
+  header.hero p{margin:4px 0;color:#d9e2f1;font-size:15px;}
+  .meta{margin-top:18px;font-size:13px;color:#bcccea;}
+  .meta b{color:#fff;}
+
+  .guide{
+    background:#eef3fb;border:1px solid #d6e0f0;border-radius:12px;
+    padding:16px 20px;margin-bottom:36px;font-size:14px;color:var(--sub);
+  }
+  .guide b{color:var(--navy);}
+  .guide ul{margin:8px 0 0;padding-left:20px;}
+
+  .checklist{
+    background:#fffdf3;border:1px solid #f0dd8a;border-radius:14px;
+    padding:18px 22px;margin-bottom:36px;
+  }
+  .cl-head{font-weight:800;color:var(--navy);font-size:16px;margin-bottom:14px;}
+  .cl-grid{display:flex;gap:28px;flex-wrap:wrap;}
+  .cl-col{flex:1;min-width:260px;}
+  .cl-sub{font-size:12px;font-weight:700;color:#8a6d00;letter-spacing:.03em;
+    text-transform:none;margin-bottom:8px;border-bottom:1px solid #f0dd8a;padding-bottom:4px;}
+  .cl-item{display:flex;align-items:baseline;gap:8px;font-size:14px;
+    padding:5px 0;color:var(--ink);cursor:pointer;}
+  .cl-item input{margin:0;transform:translateY(1px);flex:none;}
+  .cl-no{font-weight:800;color:var(--navy);flex:none;}
+  .cl-loc{margin-left:auto;font-size:11px;color:var(--sub);
+    background:#fff;border:1px solid #eadfb0;border-radius:999px;padding:1px 8px;flex:none;}
+  .cl-note{margin-top:10px;font-size:12px;color:var(--sub);}
+
+  section.slide{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:28px 30px;margin-bottom:26px;
+    box-shadow:0 2px 8px rgba(27,54,93,.05);
+  }
+  .slidehead{display:flex;align-items:baseline;gap:14px;margin-bottom:6px;}
+  .snum{
+    flex:none;width:40px;height:40px;border-radius:10px;
+    background:var(--navy);color:var(--yellow);
+    font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;
+  }
+  .stitle{font-size:21px;font-weight:800;color:var(--navy);margin:0;}
+  .stime{font-size:12px;color:var(--sub);margin-left:auto;flex:none;
+    background:#f0f3f8;padding:3px 10px;border-radius:999px;}
+  .sslot{font-size:13px;color:var(--sub);margin:2px 0 18px 54px;}
+
+  .label{
+    display:inline-block;font-size:12px;font-weight:700;color:#fff;
+    background:var(--navy);padding:2px 10px;border-radius:6px;margin-bottom:8px;
+  }
+  .label.point{background:#0d8a5f;}
+  .script{
+    background:#fbfcfe;border-left:4px solid var(--yellow);
+    padding:14px 18px;border-radius:0 10px 10px 0;margin:0 0 18px;
+    font-size:15.5px;
+  }
+  .script p{margin:0 0 10px;}
+  .script p:last-child{margin-bottom:0;}
+  .onslide{
+    border:1px dashed #c7d2e3;border-radius:10px;padding:12px 16px;
+    font-size:13.5px;color:var(--sub);background:#fcfdff;
+  }
+  .onslide b{color:var(--navy);}
+  .onslide ul{margin:6px 0 0;padding-left:18px;}
+  .onslide li{margin:3px 0;}
+
+  .fill{
+    background:var(--fill);border:1px solid #f0dd8a;border-radius:6px;
+    padding:0 6px;font-weight:700;color:#8a6d00;
+  }
+  .note{
+    margin-top:14px;font-size:13px;color:var(--sub);
+    background:#fff7f7;border:1px solid #f3d6d6;border-radius:8px;padding:10px 14px;
+  }
+  .note b{color:#b3261e;}
+
+  .tl{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 0;}
+  .pill{background:#eef3fb;color:var(--navy);font-size:12.5px;font-weight:600;
+    padding:4px 11px;border-radius:999px;border:1px solid #dbe5f3;}
+
+  footer{
+    text-align:center;color:var(--sub);font-size:12.5px;margin-top:40px;
+    padding-top:20px;border-top:1px solid var(--line);
+  }
+  @media print{
+    body{background:#fff;}
+    section.slide{box-shadow:none;break-inside:avoid;}
+    .guide{break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="inner">
+    <span class="tag">Data&AI 2G 課会 ｜ 自己紹介タイム</span>
+    <h1>「実体のない子と話していたら、いつのまにか犬だった」<br>― AIだけで作るゲーム『妄想メモリアル』</h1>
+    <p>松本 孝祐（まっちゃん／まっさん）｜ AIX本部 AIT推進部 2G</p>
+    <p>2026年6月5日（金）／ バズトーク・自己紹介</p>
+    <div class="meta">想定時間 <b>5〜10分</b>　｜　スライドはラフでOK　｜　趣味（ゲーム開発）→ 仕事（Copilot推進）へ着地</div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="guide">
+    <b>この原稿の使い方</b>
+    <ul>
+      <li>各セクション＝スライド1枚の目安。<b>「話す内容」</b>はそのまま読める口語、<b>「スライドに載せるもの」</b>は表示物のメモです。</li>
+      <li>テキストは現状（Gemini 3.5 Flash・Supabaseでのクラウド保存・業界の流れ）に合わせて反映済み。残るは表紙・変化前後の<b>画像</b>だけです。</li>
+      <li>時間が押したら、③④を厚めに・②⑤を軽めに。バズトークなので「楽しそうに話す」が最優先。</li>
+    </ul>
+  </div>
+
+  <!-- 1 -->
+  <section class="slide">
+    <div class="slidehead">
+      <div class="snum">1</div>
+      <h2 class="stitle">つかみ（表紙）</h2>
+      <span class="stime">約30秒</span>
+    </div>
+    <div class="sslot">ねらい：謎めいたタイトルで「ん？」と引き込む</div>
+
+    <div class="label">話す内容</div>
+    <div class="script">
+      <p>AIT推進部2Gの松本孝祐です。「まっちゃん」とか「まっさん」と呼ばれてます。4月にAIXへ転部してきました。よろしくお願いします。</p>
+      <p>今日のバズトークは、最近ハマってる「<b>個人でのゲーム開発</b>」の話をさせてください。タイトルが…「<b>実体のない子と話してたら、いつのまにか犬だった</b>」。意味わかんないですよね（笑）。これ、ちゃんと意味があるので、最後まで聞いてください。</p>
+    </div>
+
+    <div class="label" style="background:#475569;">スライドに載せるもの</div>
+    <div class="onslide">
+      <b>表紙</b>
+      <ul>
+        <li>ゲームタイトル：<b>妄想メモリアル（MOSOU-MEMORIAL）</b></li>
+        <li>サブコピー：「会話で、相手の“姿”が変わっていく」</li>
+        <li>キービジュアル or スクショ1枚（あれば）<span class="fill">〔画像差し込み枠〕</span></li>
+        <li>名前 / 所属 / 日付</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section class="slide">
+    <div class="slidehead">
+      <div class="snum">2</div>
+      <h2 class="stitle">私について</h2>
+      <span class="stime">約1分</span>
+    </div>
+    <div class="sslot">ねらい：人柄を一瞬で。仕事の話はここで軽く触れて、③以降の伏線に</div>
+
+    <div class="label">話す内容</div>
+    <div class="script">
+      <p>簡単に自己紹介を。JBSは<b>5年目</b>で、もともとはCI部で<b>Copilotの社内推進</b>を4年ほどやっていました。活用相談に乗ったり、勉強会を開いたり。で、この4月から「現場でAIを触る側に回りたい」と思ってAIXに来た、という感じです。</p>
+      <p>出身は<b>埼玉県越谷市</b>。趣味は<b>キャンプ</b>と<b>ラジオ</b>で、キャンプは20歳からギアを買い始めて、今は<b>月一で行けないと体調を崩す</b>レベルです（笑）。ラジオは芸人さんのを<b>週8本</b>くらい聴いてます。好きな食べ物は<b>ラザニア</b>。</p>
+      <p>最近いちばん嬉しかったのが、<b>地元に推しの芸人さんが来てくれて“逆聖地巡礼”ができた</b>ことでした（笑）。…と、こんな感じの人間です。</p>
+      <p>で、推進する側からAIを「自分で使い倒す側」になったら、勢い余って週末にゲームまで作り始めた、というのが今日の本題です。</p>
+    </div>
+
+    <div class="label" style="background:#475569;">スライドに載せるもの</div>
+    <div class="onslide">
+      <b>プロフィール（既存スライドを流用可）</b>
+      <ul>
+        <li>松本 孝祐 ／ AIX本部 AIT推進部 2G ／ JBS 5年目</li>
+        <li>前職的ポジション：CI部でCopilot推進（相談60回以上・勉強会40回以上）</li>
+        <li>出身地：埼玉県越谷市 ／ 好きな食べ物：ラザニア ／ 一言：大きな声で叫びたい！</li>
+        <li>趣味：<b>キャンプ</b>（月一で行けないと体調を崩す）／ <b>ラジオ傾聴</b>（芸人さんのを週8本）</li>
+        <li>最近嬉しかったこと：<b>地元に推しの芸人さんが来て“逆聖地巡礼”ができた</b></li>
+      </ul>
+    </div>
+    <div class="note"><b>メモ：</b>出身地・マイブーム・好きな食べ物・一言はすべて反映済み。テキスト項目の記入は完了。</div>
+  </section>
+
+  <!-- 3 -->
+  <section class="slide">
+    <div class="slidehead">
+      <div class="snum">3</div>
+      <h2 class="stitle">『妄想メモリアル』ってどんなゲーム？</h2>
+      <span class="stime">約2分</span>
+    </div>
+    <div class="sslot">ねらい：今日いちばんの“バズ”ポイント。コンセプトを体験として語る</div>
+
+    <div class="label point">ここが山場（厚めに）</div>
+    <div class="script">
+      <p>ジャンルでいうと「<b>会話型オープンワールド × 立ち絵会話シミュレーション</b>」のPoCです。…って言われてもピンと来ないと思うので、体験を話します。</p>
+      <p>ゲームを始めると、最初は<b>「実体のない子」</b>がいます。顔も姿もない。そこからプレイヤーが話しかけて、<b>10回くらい会話のラリー</b>を重ねると、AIがその子の<b>キャラクターを生成</b>してくれる。会話の中身に応じて、見た目が立ち上がってくるんです。</p>
+      <p>面白いのはここからで、<b>会話を続けると外見が動的に変わっていく</b>。髪型が変わったり、服が変わったり、急に10歳年を取ったり…そして、ずっと話してたら<b>「この子、実は犬だった」</b>みたいなことが起きる（笑）。これがタイトルの伏線回収です。</p>
+      <p>裏側のコンセプトは<b>「アイデンティティ（＝顔）は固定、ルック（＝見た目）は可変」</b>。同じ存在なんだけど、関係性によって姿が変わる。そこを技術的に分離して作っているのがミソです。</p>
+    </div>
+
+    <div class="label" style="background:#475569;">スライドに載せるもの</div>
+    <div class="onslide">
+      <b>コンセプト1枚</b>
+      <ul>
+        <li>ジャンル：会話型オープンワールド × 立ち絵会話シミュレーション（PoC）</li>
+        <li>体験フロー：<b>実体のない子 → 約10ラリー → AIがキャラ生成 → 会話で外見が動的変化</b>（髪型 / 服 / 年齢 / 種族…実は犬）</li>
+        <li>設計思想：<b>顔＝固定 / 見た目＝可変</b>（identity と look の分離）</li>
+        <li>※可能なら変化の前後スクショを2〜3枚並べる<span class="fill">〔画像差し込み枠〕</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section class="slide">
+    <div class="slidehead">
+      <div class="snum">4</div>
+      <h2 class="stitle">どう作ったか ― AI 4体で“分業”</h2>
+      <span class="stime">約2分</span>
+    </div>
+    <div class="sslot">ねらい：エンジニア／推進部に刺さる中身。「人間が書いたのは一部」を強調</div>
+
+    <div class="label point">技術が好きな人向けのヤマ</div>
+    <div class="script">
+      <p>作り方が今っぽくて。<b>4つのAIに役割分担</b>させて作りました。</p>
+      <p>まず見た目のUIは <b>v0（Vercel）</b>。ゲームのロジックは <b>Claude Code</b> に書かせる。ゲーム内でキャラがしゃべる“脳”は <b>Gemini 3.5 Flash</b>（軽量で速い会話モデル）。そしてキャラの画像は <b>gpt-image-2</b>（OpenAIの画像モデル）で生成しています。</p>
+      <p>外見が変わる仕組みがちょっと賢くて、<b>直前の立ち絵を“リファレンスの顔”として渡して</b>、「同じ人のまま、髪型だけ変えて」「10歳年上に」「犬にして」と編集指示を出す。だから別人にならずに、地続きで姿だけ変わるんです。</p>
+      <p>会話のAIは、1回の呼び出しで<b>「セリフ・好感度の変化・嫉妬の変化・感情」をまとめてJSONで返す</b>ように作っていて、それでキャラの態度がリアルタイムに動きます。</p>
+      <p>最近は保存まわりも作り込んでいて、<b>キャラ・会話・生成した立ち絵を Supabase（クラウドのDB＋ストレージ）に保存</b>するようにしました。これで<b>別の端末でも続きから遊べる</b>し、立ち絵も一度作ればクラウドに残るので、開くたびに作り直さなくて済みます。書き込みはサーバー経由で、キーはサーバー側だけが持つ作りにしています。</p>
+      <p>規模感でいうと、開発<b>約12日 / 20コミット</b>、自分で書いたコードは<b>約3,238行</b>、生成した画像は<b>10枚</b>くらい。正直、<b>人間が手で書いた部分はそのうちの一部</b>で、あとはAIに任せた、というのが実感です。</p>
+    </div>
+
+    <div class="label" style="background:#475569;">スライドに載せるもの</div>
+    <div class="onslide">
+      <b>AI分業の図 ＋ 数字</b>
+      <ul>
+        <li>v0：UI ／ Claude Code：ゲームロジック ／ Gemini 3.5 Flash：会話の脳 ／ gpt-image-2：立ち絵生成</li>
+        <li>外見変化：直前の立ち絵を参照顔として images.edit に渡し「同一人物のまま変化」</li>
+        <li>会話：1コールで <code>{ reply, affinityChange, jealousyChange, emotion }</code> を構造化JSON出力</li>
+        <li>データ保存：キャラ・会話・立ち絵を <b>Supabase</b>（DB＋ストレージ）に保存し、端末をまたいで続きから（device_id ごとに同期）</li>
+        <li>技術スタック（小さく）：TypeScript / Next.js 16 / React 19 / Tailwind v4 / Zustand / Supabase</li>
+      </ul>
+      <div class="tl" style="margin-top:10px;">
+        <span class="pill">開発 約12日</span>
+        <span class="pill">20コミット</span>
+        <span class="pill">自作コード 約3,238行</span>
+        <span class="pill">生成画像 10枚</span>
+        <span class="pill">クラウド保存（Supabase）</span>
+      </div>
+    </div>
+    <div class="note"><b>コスト小ネタ（時間あれば）：</b>立ち絵1枚は安いと約$0.005、高解像度（1024×1536）で約$0.165。表情8種そろえても高解像で$1.3くらい、と“財布に優しい”話を一言。</div>
+  </section>
+
+  <!-- 5 -->
+  <section class="slide">
+    <div class="slidehead">
+      <div class="snum">5</div>
+      <h2 class="stitle">作ってみて気づいたこと（→ 仕事に着地）</h2>
+      <span class="stime">約1.5分</span>
+    </div>
+    <div class="sslot">ねらい：趣味を仕事（Copilot推進・AIX）にきれいにつなげる</div>
+
+    <div class="label">話す内容</div>
+    <div class="script">
+      <p>趣味の話なんですが、作ってみて<b>仕事に直結する学び</b>が3つありました。</p>
+      <p>1つめ。<b>AIに“役割分担”させると一気に進む</b>。1個のAIに全部やらせるより、UI・ロジック・会話・画像で分けたほうが圧倒的に速い。これ、業務でCopilotやエージェントを設計するときと同じ発想だなと。</p>
+      <p>2つめ。<b>出力を構造化（JSON）で縛ると安定する</b>。「いい感じに返して」じゃなくて、返す“型”を決める。これは社内の活用相談でもそのまま使える勘所でした。</p>
+      <p>3つめ。<b>個人でここまで作れる時代</b>だということ。週末に1人で、しかも安く、動くものができる。だからこそ「現場の人がAIで自分の業務を作り変える」推進をやる価値がある、と改めて思いました。</p>
+      <p>推進する側だった自分が、AIXで“作る側”を体験して、両方の気持ちがわかるようになった。これを社内のCopilot推進にも持ち帰りたいです。</p>
+    </div>
+
+    <div class="label point">業界の流れ（おまけ・1分で）</div>
+    <div class="script">
+      <p>あと、今回あえて会話の脳に <b>Gemini 3.5 Flash</b> っていう“軽量で賢い”モデルを選んだんですが、ここに最近の大きな流れを感じています。</p>
+      <p>巨大モデルを競う時代から、<b>「軽くて、速くて、賢い」AI</b>が主役になりつつある。たとえばGoogleは2026年3月に <b>TurboQuant</b> という圧縮技術を出していて、<b>LLMを動かすのに必要なメモリを約1/6に圧縮</b>できる。賢さはそのままに、どんどん“軽く”できるようになってきているんです。</p>
+      <p>しかも足元では<b>量子チップ「Willow」</b>みたいな計算基盤の進化も同時に進んでいて、AIを支える土台そのものが強くなっている。</p>
+      <p>その軽量AIがどこへ向かうかというと、<b>ゲームやロボット ── いわゆる“フィジカルAI”にAIが乗っていく流れ</b>です。実際Googleは <b>Gemini Robotics On-Device</b> という、ネット接続なしでロボットの中だけで動く軽量モデルを出していて、ロボットが現場で自律的に動き始めている。</p>
+      <p>僕が今回ゲームでやった「会話で姿が変わる」体験も、その大きな流れの“ゲーム側の入り口”だと思っていて。<b>軽量AIが画面の中からリアルの世界に出ていく</b>、その輪郭がはっきりしてきた時代に、自分も手を動かせているのが面白いなと感じています。</p>
+    </div>
+
+    <div class="label" style="background:#475569;">スライドに載せるもの</div>
+    <div class="onslide">
+      <b>気づき3点 ＋ 業界の流れ</b>
+      <ul>
+        <li>① AIは“分業”で伸びる（＝エージェント設計の発想）</li>
+        <li>② 出力を構造化で縛ると安定する（活用相談にそのまま転用可）</li>
+        <li>③ 個人でも安く速く作れる ＝ 現場主導DXのリアリティ</li>
+      </ul>
+      <div style="margin-top:10px;border-top:1px dashed #c7d2e3;padding-top:8px;">
+        <b>大きな流れ：</b>「巨大」から<b>「軽量で賢い」</b>へ → 圧縮技術（TurboQuant＝メモリ約1/6）＆量子（Willow）で土台が進化 → 軽量AIが<b>ゲーム／ロボット（フィジカルAI）</b>に乗る
+        <div class="tl" style="margin-top:8px;">
+          <span class="pill">Gemini 3.5 Flash（軽量・高速）</span>
+          <span class="pill">TurboQuant（メモリ約1/6）</span>
+          <span class="pill">Google Willow 量子チップ</span>
+          <span class="pill">Gemini Robotics On-Device</span>
+          <span class="pill">フィジカルAI</span>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>裏取り済み：</b>Gemini 3.5 Flash＝Google I/O 2026（2026/5/19）発表の軽量モデル。TurboQuant＝Google Researchが2026/3/24発表した圧縮アルゴリズム（LLMのメモリを約1/6に、ICLR 2026採択）。Willow＝Googleの量子チップ（研究機関への提供が拡大中）。Gemini Robotics On-Device＝2026/4にロボット実機でローカル動作する軽量VLA。<b>話しすぎ注意</b>──ここはバズトークなので“ワクワク”を1分で。</div>
+  </section>
+
+  <!-- 6 -->
+  <section class="slide">
+    <div class="slidehead">
+      <div class="snum">6</div>
+      <h2 class="stitle">デモ＆締め</h2>
+      <span class="stime">約1分</span>
+    </div>
+    <div class="sslot">ねらい：実物を見せて余韻を残す。話しかけてもらえる空気で終わる</div>
+
+    <div class="label">話す内容</div>
+    <div class="script">
+      <p>せっかくなので、実際に動かしている様子を<b>イメージ動画</b>でお見せします。…（動画）…ほら、話しかけると返事が変わって、見た目もこう変わっていきます。</p>
+      <p>まだ完成度は<b>60%</b>くらいのPoCなので、今日はURLの共有はしないでおきます。<b>まずは友人の奥さんに触ってもらう</b>予定で、そこで「面白い」って言ってもらえたら、また<b>完成版をどこかで紹介させてください</b>。</p>
+      <p>転部したばかりで、皆さんにいろいろ教わりたいので、気軽に話しかけてください。ゲームでも、Copilotでも、なんでも。今日はありがとうございました！</p>
+    </div>
+
+    <div class="label" style="background:#475569;">スライドに載せるもの</div>
+    <div class="onslide">
+      <b>締め1枚</b>
+      <ul>
+        <li>イメージ動画（実際の動作の様子）</li>
+        <li>ひとこと：「まずは友人の奥さんにテストプレイ。好評なら完成版をまた紹介します」</li>
+        <li>「現場で作る側になりました。話しかけてください！」</li>
+      </ul>
+    </div>
+    <div class="note"><b>記入完了：</b>完成度60%・イメージ動画・埼玉県越谷市・キャンプ・ラザニア・「大きな声で叫びたい！」。残りは画像（表紙・変化前後）のみ。</div>
+  </section>
+
+  <footer>
+    自己紹介 発表原稿 ｜ 妄想メモリアル開発 ｜ 松本 孝祐 ｜ Data&AI 2G 課会 2026/06/05<br>
+    <span style="font-size:11px;">残りは画像（表紙・変化前後）だけ。スライド化が必要になったら、この6枚構成のままデッキ化できます。</span>
+  </footer>
+
+</div>
+</body>
+</html>

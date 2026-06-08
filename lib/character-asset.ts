@@ -76,16 +76,23 @@ export function resolveCharacterAsset(
   emotion: Emotion = 'neutral',
   mode: AssetMode = 'image'
 ): ResolvedAsset {
-  // 1. Generated image from the active look.
+  // 1. Generated image from the active look. Runtime base64 first (freshest),
+  //    then persisted Supabase Storage URLs (survive reload / cross-device).
   if (look) {
     const generated =
-      look.images[emotion] ?? look.images.neutral ?? look.referenceImage ?? null;
+      look.images[emotion] ??
+      look.images.neutral ??
+      look.imageUrls?.[emotion] ??
+      look.imageUrls?.neutral ??
+      look.referenceImage ??
+      look.referenceImageUrl ??
+      null;
     if (generated) {
       return { mode, emotion, generatedSrc: generated, pathSrc: null, formless: false };
     }
-    // Look exists but its images were stripped (e.g. after reload). It's not a
-    // generated image, but it's also not the legacy static character -> treat as
-    // formless so the UI prompts a regenerate instead of loading a wrong slug.
+    // Look exists but has no image source (e.g. generation failed and nothing
+    // was uploaded). Not a legacy static character -> treat as formless so the
+    // UI prompts a regenerate instead of loading a wrong slug.
     return { mode, emotion, generatedSrc: null, pathSrc: null, formless: true };
   }
 
