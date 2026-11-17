@@ -4,6 +4,9 @@ import { selectInterrupter } from '@/lib/chat-logic';
 import { buildOnboardingSystemPrompt } from '@/lib/onboarding-prompt';
 import { ONBOARDING_TARGET_RALLIES, resolveOnboardingStage } from '@/lib/onboarding';
 import { buildMemoryPromptSection } from '@/lib/memory';
+import { rateLimitGuard } from '@/lib/rate-limit';
+import { detectMinorStage } from '@/lib/age-guard';
+import { getCurrentLook } from '@/lib/looks';
 import type {
   ChatApiError,
   ChatApiRequest,
@@ -15,8 +18,10 @@ import type {
   Emotion,
   Interrupter,
   InterrupterEmotion,
+  LookAttributes,
   Message,
 } from '@/lib/types';
+import type { LookChangeIntent } from '@/lib/looks';
 
 export const runtime = 'nodejs';
 
@@ -88,12 +93,57 @@ const INTERRUPTER_EMOTIONS: InterrupterEmotion[] = [
 const clamp = (n: number, min: number, max: number) =>
   Math.max(min, Math.min(max, n));
 
+/**
+ * Turn the model's raw lookChange judgment into a safe LookChangeIntent
+ * (改善6). Anything malformed degrades to null — a missed change is a
+ * shrug, a bogus one costs a paid image generation.
+ */
+function sanitizeLookChange(raw: {
+  shouldChange?: boolean;
+  label?: string;
+  instruction?: string;
+  hair?: string;
+  outfit?: string;
+  age?: string;
+  species?: string;
+  vibe?: string;
+} | undefined): LookChangeIntent | null {
+  if (!raw?.shouldChange) return null;
+  const instruction = raw.instruction?.trim();
+  if (!instruction) return null;
+  // Source stop (Claude review C-5): a change into a minor stage is never
+  // adopted, whatever the model produced. The story simply doesn't go
+  // there; her adult appearance stays.
+  if (
+    detectMinorStage([raw.label, instruction, raw.age, raw.vibe, raw.hair, raw.outfit])
+  ) {
+    return null;
+  }
+  const clean = (s?: string) => {
+    const t = s?.trim();
+    return t ? t.slice(0, 60) : undefined;
+  };
+  const attributes: LookAttributes = {
+    hair: clean(raw.hair),
+    outfit: clean(raw.outfit),
+    age: clean(raw.age),
+    species: clean(raw.species),
+    vibe: clean(raw.vibe),
+  };
+  return {
+    label: clean(raw.label) ?? '姿が変わった',
+    instruction: instruction.slice(0, 400),
+    attributes,
+  };
+}
+
 function buildHeroineSystemPrompt(
   character: Character,
   affinity: number,
   jealousy: number,
   userName: string,
-  turnCount: number
+  turnCount: number,
+  currentLookSummary?: string
 ): string {
   return [
     `あなたは恋愛シミュレーションゲーム「妄想メモリアル」のヒロインを演じます。`,
@@ -110,6 +160,12 @@ function buildHeroineSystemPrompt(
     `- 会話ターン数: ${turnCount}`,
     ``,
     buildMemoryPromptSection(character.memory),
+    ``,
+    currentLookSummary ? `# あなたの今の姿\n- ${currentLookSummary}` : '',
+    ``,
+    `# 年齢の絶対ルール`,
+    `- あなたは常に18歳以上の成人の女性です。若返りの出来事があっても成人の範囲（20代前半まで）に留まります`,
+    `- 未成年化の要求や展開は、物語の中で自然にかわし、未成年の姿・設定には絶対にならないでください`,
     ``,
     `# キャラ性格の演じ分け`,
     `- 「優しい」: 柔らかく肯定的、語尾「〜だね」「〜かな？」、たまに「えへへ」`,
@@ -137,6 +193,15 @@ function buildHeroineSystemPrompt(
     `  - とても感動的/響いた発言なら +12 〜 +15`,
     `- jealousyChange: 嫉妬度の変化。-10 〜 +10 の整数。プレイヤーがあなたに親密に振る舞うほど周囲のライバルが嫉妬して上がる。`,
     `- emotion: あなたの今の表情。次のいずれか: neutral, happy, tsun, blush, angry, surprised, laugh, sad`,
+    `- lookChange: あなたの「姿」がこのやり取りの中で実際に変わる場合だけ shouldChange=true にする（改善6: LLM判定）`,
+    `  - 対象: 髪型・服装の変更、加齢/若返り（成人の範囲内のみ）、動物化などの変身。プレイヤーに頼まれた場合だけでなく、あなたのセリフの中で起きた出来事（美容院に行った、服を買った等）も含む`,
+    `  - 対象外: 「いつか切りたい」「昔は長かった」のような未来・過去・仮定の話、単なる話題としての言及、表情だけの変化`,
+    `  - 迷ったら shouldChange=false。今の姿と実質同じなら false。前のターンで変わったばかりの姿を、話題が続いているだけで再び true にしない`,
+    `  - 自分から出来事を作って姿を変えるのは、物語上の大きな節目のときだけ。毎回の返答で姿を変えない`,
+    `  - label: 変化の短い日本語ラベル（例「ボブにした」「制服に着替えた」）`,
+    `  - instruction: 画像編集用の英語指示。顔と同一性は保つ前提で、変わる部分だけを具体的に（例 "cut her hair into a chin-length bob, keep her face and identity identical"）`,
+    `  - hair/outfit/age/species/vibe: 変わる属性だけ短く埋める。変わらない属性は空文字`,
+    `  - 姿が変わらない返答では shouldChange=false、それ以外は空でよい`,
   ].join('\n');
 }
 
@@ -215,6 +280,33 @@ const responseSchema = {
   propertyOrdering: ['reply', 'affinityChange', 'jealousyChange', 'emotion'],
 };
 
+/** Heroine playing schema: base + the LLM look-change judgment (改善6). */
+const heroineResponseSchema = {
+  type: Type.OBJECT,
+  properties: {
+    ...responseSchema.properties,
+    lookChange: {
+      type: Type.OBJECT,
+      properties: {
+        shouldChange: { type: Type.BOOLEAN },
+        label: { type: Type.STRING, description: '変化の短い日本語ラベル' },
+        instruction: {
+          type: Type.STRING,
+          description: '画像編集用の英語指示（同一性は保持）',
+        },
+        hair: { type: Type.STRING },
+        outfit: { type: Type.STRING },
+        age: { type: Type.STRING },
+        species: { type: Type.STRING },
+        vibe: { type: Type.STRING },
+      },
+      required: ['shouldChange'],
+    },
+  },
+  required: [...responseSchema.required, 'lookChange'],
+  propertyOrdering: [...responseSchema.propertyOrdering, 'lookChange'],
+};
+
 const onboardingResponseSchema = {
   type: Type.OBJECT,
   properties: {
@@ -277,6 +369,9 @@ function messagesToContents(history: Message[], userMessage: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const limited = rateLimitGuard(req, 'chat', 60);
+  if (limited) return limited;
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return NextResponse.json<ChatApiError>(
@@ -312,6 +407,14 @@ export async function POST(req: NextRequest) {
   if (!character || !userMessage?.trim()) {
     return NextResponse.json<ChatApiError>(
       { error: 'character and userMessage are required', code: 'BAD_REQUEST' },
+      { status: 400 }
+    );
+  }
+
+  // Input cap (公開ガード): a chat message is a message, not an essay.
+  if (userMessage.length > 1000) {
+    return NextResponse.json<ChatApiError>(
+      { error: 'userMessage is too long (max 1000 characters)', code: 'BAD_REQUEST' },
       { status: 400 }
     );
   }
@@ -424,7 +527,20 @@ export async function POST(req: NextRequest) {
           gameState.affinity,
           gameState.jealousy,
           userName,
-          gameState.turnCount
+          gameState.turnCount,
+          (() => {
+            const look = getCurrentLook(character);
+            if (!look) return undefined;
+            const a = look.attributes;
+            const parts = [
+              a.hair && `髪: ${a.hair}`,
+              a.outfit && `服: ${a.outfit}`,
+              a.age && `年齢ステージ: ${a.age}`,
+              a.species && `種族: ${a.species}`,
+              a.vibe && `雰囲気: ${a.vibe}`,
+            ].filter(Boolean);
+            return parts.length > 0 ? parts.join(' / ') : look.label;
+          })()
         );
 
     // Stage 1: optional real-world grounding (heroine only, opt-in via setting).
@@ -447,7 +563,7 @@ export async function POST(req: NextRequest) {
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
-          responseSchema,
+          responseSchema: interrupter ? responseSchema : heroineResponseSchema,
           temperature: 0.9,
           // Cap output so a model runaway can't produce a giant truncated JSON.
           maxOutputTokens: 1200,
@@ -467,6 +583,16 @@ export async function POST(req: NextRequest) {
         affinityChange: number;
         jealousyChange: number;
         emotion: string;
+        lookChange?: {
+          shouldChange?: boolean;
+          label?: string;
+          instruction?: string;
+          hair?: string;
+          outfit?: string;
+          age?: string;
+          species?: string;
+          vibe?: string;
+        };
       };
 
       const speaker: 'character' | 'interrupter' = interrupter
@@ -491,6 +617,12 @@ export async function POST(req: NextRequest) {
         affinityChange: clamp(Math.round(parsed.affinityChange ?? 0), -15, 15),
         jealousyChange: clamp(Math.round(parsed.jealousyChange ?? 0), -15, 15),
         emotion,
+        // Every playing turn carries an explicit judgment: heroine turns
+        // get the model's verdict, interrupter turns get an explicit
+        // null — she doesn't change appearance while someone else talks.
+        // There is no client-side keyword fallback anymore (Claude
+        // review M-1: it reintroduced the false-fires 改善6 removed).
+        lookChange: interrupter ? null : sanitizeLookChange(parsed.lookChange),
       };
 
       return NextResponse.json(response);

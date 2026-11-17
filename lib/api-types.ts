@@ -10,6 +10,7 @@ import type {
   LookAttributes,
   Message,
 } from './types';
+import type { LookChangeIntent } from './looks';
 
 // ----- /api/chat request/response -----
 
@@ -56,11 +57,18 @@ export interface ChatApiResponse {
   emotion: Emotion | InterrupterEmotion;
   /** Present when the request was in onboarding phase. */
   onboarding?: OnboardingResult;
+  /**
+   * LLM-judged appearance change (改善6, playing phase, heroine turns).
+   * `undefined` = the server did not judge (older server / interrupter
+   * turn) and the client may fall back to keyword detection; `null` =
+   * judged, no change this turn.
+   */
+  lookChange?: LookChangeIntent | null;
 }
 
 export interface ChatApiError {
   error: string;
-  code?: 'NO_API_KEY' | 'GEMINI_FAILED' | 'BAD_REQUEST';
+  code?: 'NO_API_KEY' | 'GEMINI_FAILED' | 'BAD_REQUEST' | 'RATE_LIMITED';
 }
 
 // ----- /api/generate-look request/response -----
@@ -103,7 +111,7 @@ export interface GenerateLookResponse {
 export interface GenerateLookError {
   error: string;
   /** NO_IMAGE_API => no OPENAI_API_KEY configured; UI degrades to silhouette. */
-  code?: 'NO_IMAGE_API' | 'OPENAI_FAILED' | 'BAD_REQUEST';
+  code?: 'NO_IMAGE_API' | 'OPENAI_FAILED' | 'BAD_REQUEST' | 'MINOR_STAGE' | 'RATE_LIMITED';
 }
 
 // ----- /api/generate-background request/response -----
@@ -179,7 +187,7 @@ export interface SummarizeMemoryResponse {
 
 export interface SummarizeMemoryError {
   error: string;
-  code?: 'NO_API_KEY' | 'GEMINI_FAILED' | 'BAD_REQUEST';
+  code?: 'NO_API_KEY' | 'GEMINI_FAILED' | 'BAD_REQUEST' | 'RATE_LIMITED';
 }
 
 // ----- /api/sync request/response -----

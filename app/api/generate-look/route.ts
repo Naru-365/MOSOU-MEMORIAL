@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildBaseLookPrompt, buildEditPrompt, buildLookPromptForEmotion } from '@/lib/image-prompt';
+import { detectMinorStage, sanitizeOutfitForMinor } from '@/lib/age-guard';
+import { rateLimitGuard } from '@/lib/rate-limit';
 import type { GenerateLookError, GenerateLookRequest, GenerateLookResponse } from '@/lib/api-types';
-import type { Emotion } from '@/lib/types';
+import type { Emotion, LookAttributes } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
+  const limited = rateLimitGuard(req, 'generate-look', 12);
+  if (limited) return limited;
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json<GenerateLookError>(
@@ -24,7 +29,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { characterName, profile, attributes, changeInstruction, referenceImage } = body;
+  const { characterName, profile, referenceImage } = body;
 
   if (!characterName?.trim()) {
     return NextResponse.json<GenerateLookError>(
@@ -33,20 +38,74 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Age-stage guard (公開ガード, Claude review C-2/C-3/C-4): scan EVERY
+  // text field that reaches the prompt — profile included, since a birth
+  // carries the age only there — not just attributes.age.
+  const minorSafe = detectMinorStage([
+    body.attributes?.age,
+    body.attributes?.extra,
+    body.attributes?.vibe,
+    body.attributes?.hair,
+    body.changeInstruction,
+    profile?.appearanceNotes,
+    profile?.hairStyle,
+    profile?.outfit,
+    profile?.vibe,
+    profile?.rawSummary,
+  ]);
+
+  if (minorSafe && referenceImage) {
+    // An edit is anchored to a photoreal reference; a tone instruction
+    // cannot reliably override it, so a "safe" edit could still return a
+    // photoreal minor. Refuse: the current look simply stays (C-4).
+    return NextResponse.json<GenerateLookError>(
+      { error: 'Minor-stage edits are not generated', code: 'MINOR_STAGE' },
+      { status: 400 }
+    );
+  }
+
+  // Minor fresh generation (e.g. a birth whose profile says so): allowlist
+  // posture — free-text fields that could smuggle exposure instructions
+  // are dropped or sanitized, and framing flips to illustration (C-2).
+  const changeInstruction = minorSafe ? undefined : body.changeInstruction;
+  const attributes: LookAttributes | undefined = minorSafe
+    ? {
+        hair: body.attributes?.hair,
+        age: body.attributes?.age,
+        species: body.attributes?.species,
+        outfit: sanitizeOutfitForMinor(body.attributes?.outfit),
+      }
+    : body.attributes;
+  const safeProfile = minorSafe
+    ? {
+        ...profile,
+        outfit: sanitizeOutfitForMinor(profile?.outfit),
+        rawSummary: undefined,
+      }
+    : profile;
+
   // Fresh generations must include 'neutral' (it becomes the reference).
   // Edit calls already carry a reference, so they generate exactly what was
   // asked for — expression-only calls skip a redundant neutral regeneration.
-  const requestedEmotions: Emotion[] =
-    body.emotions && body.emotions.length > 0 ? body.emotions : ['neutral'];
+  // Server-side clamps (M-4): at most 4 emotions, fixed size/quality —
+  // cost shape is never client-controlled.
+  const VALID_EMOTIONS: Emotion[] = [
+    'neutral', 'happy', 'tsun', 'blush', 'angry', 'surprised', 'laugh', 'sad',
+  ];
+  const requestedEmotions: Emotion[] = (
+    body.emotions && body.emotions.length > 0
+      ? body.emotions
+      : ['neutral' as Emotion]
+  ).filter((e, i, arr) => VALID_EMOTIONS.includes(e) && arr.indexOf(e) === i).slice(0, 4);
   const emotions: Emotion[] =
     requestedEmotions.includes('neutral') || referenceImage
       ? requestedEmotions
-      : ['neutral', ...requestedEmotions];
+      : ['neutral' as Emotion, ...requestedEmotions];
 
-  const size = body.size ?? '1024x1536';
-  const quality = body.quality ?? 'low';
+  const size = '1024x1536';
+  const quality = 'low';
 
-  const base = buildBaseLookPrompt(characterName, profile, attributes);
+  const base = buildBaseLookPrompt(characterName, safeProfile, attributes, { minorSafe });
 
   const images: Partial<Record<Emotion, string>> = {};
 
@@ -61,7 +120,7 @@ export async function POST(req: NextRequest) {
         const buf = Buffer.from(b64Input, 'base64');
         const form = new FormData();
         form.append('model', 'gpt-image-2');
-        form.append('prompt', buildEditPrompt(base, changeInstruction, emotion));
+        form.append('prompt', buildEditPrompt(base, changeInstruction, emotion, { minorSafe }));
         form.append('size', size);
         form.append('quality', quality);
         form.append('image[]', new Blob([buf], { type: 'image/png' }), 'reference.png');
