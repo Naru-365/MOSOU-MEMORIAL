@@ -51,6 +51,16 @@ export interface Look {
   referenceImageUrl?: string; // neutral Storage public URL
   basePrompt?: string; // locked identity+look prompt used to generate
   createdAt: number;
+  /** In-game day this look was born/changed on (目的・区切り). Optional:
+   *  looks from older saves simply have no day. */
+  day?: number;
+}
+
+/** A reached story chapter (see lib/chapters.ts). */
+export interface ChapterRecord {
+  id: string;
+  /** In-game day the chapter was reached. */
+  day: number;
 }
 
 /**
@@ -91,6 +101,12 @@ export interface Character {
     /** Grace replacements already used (capped, never announced). */
     adjustmentsUsed: number;
   };
+  /**
+   * Story chapters reached so far (目的・区切り, lib/chapters.ts). Chapter 1
+   * is the birth itself; later chapters unlock as affinity deepens. Records
+   * are append-only and local (same persistence story as `memory`).
+   */
+  chapters?: ChapterRecord[];
   /** Set when affinity hit 0 and she vanished. Locks the character from chat. */
   disappeared?: boolean;
   createdAt: number;

@@ -16,6 +16,7 @@ import {
   sortLooksNewestFirst,
 } from '@/lib/memorial';
 import { composeShareImage, downloadFile } from '@/lib/share-image';
+import { CHAPTERS, nextChapter } from '@/lib/chapters';
 import type { Character, Look } from '@/lib/types';
 
 export default function MemorialPage() {
@@ -92,6 +93,12 @@ export default function MemorialPage() {
 function CharacterMemorial({ character }: { character: Character }) {
   const looks = sortLooksNewestFirst(character.looks ?? []);
   const memory = character.memory;
+  const gameState = useAppStore((state) => state.gameState);
+  const isActiveCharacter = gameState.currentCharacterId === character.id;
+  const upcoming =
+    isActiveCharacter && (character.chapters?.length ?? 0) > 0
+      ? nextChapter(gameState.affinity)
+      : null;
 
   return (
     <section className="flex flex-col gap-4">
@@ -115,6 +122,47 @@ function CharacterMemorial({ character }: { character: Character }) {
           <p className="text-sm leading-relaxed text-foreground">
             {memory.summary}
           </p>
+        </div>
+      )}
+
+      {/* Story chapters (目的・区切り): the shape of her story so far, and —
+          for the character being played now — the next chapter's title as
+          a quiet "これから". No progress bars, no numbers to fill. */}
+      {(character.chapters?.length ?? 0) > 0 && (
+        <div className="rounded-2xl bg-card border border-border p-4 flex flex-col gap-2">
+          <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+            <BookHeart className="w-4 h-4 text-primary" />
+            物語の歩み
+          </h3>
+          <ol className="flex flex-col gap-1.5">
+            {CHAPTERS.filter((c) =>
+              (character.chapters ?? []).some((r) => r.id === c.id)
+            ).map((c) => {
+              const record = (character.chapters ?? []).find(
+                (r) => r.id === c.id
+              );
+              return (
+                <li
+                  key={c.id}
+                  className="flex items-baseline justify-between gap-2 text-sm"
+                >
+                  <span className="text-foreground">
+                    第{c.number}章「{c.title}」
+                  </span>
+                  {record && (
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {record.day}日目
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+          {upcoming && (
+            <p className="text-xs text-muted-foreground pt-1 border-t border-border">
+              これから ― 第{upcoming.number}章「{upcoming.title}」
+            </p>
+          )}
         </div>
       )}
 
@@ -186,6 +234,7 @@ function LookCard({
         <div className="flex items-baseline justify-between gap-2">
           <h3 className="font-bold text-foreground">{look.label}</h3>
           <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {look.day ? `${look.day}日目 ・ ` : ''}
             {formatLookDate(look.createdAt)}
           </span>
         </div>

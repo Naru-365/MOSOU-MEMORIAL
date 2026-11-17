@@ -49,6 +49,7 @@ import type {
 } from '@/lib/api-types';
 import { detectSceneChange } from '@/lib/scenes';
 import { ONBOARDING_TARGET_RALLIES } from '@/lib/onboarding';
+import { dayForTurn, newChaptersBetween } from '@/lib/chapters';
 
 const HEROINE_EMOTIONS: Emotion[] = [
   'neutral',
@@ -349,6 +350,7 @@ export default function ChatPage() {
       const look = createLook('初期', {}, { basePrompt: data.basePrompt });
       look.images = data.images;
       look.referenceImage = data.referenceImage;
+      look.day = 1;
       addLook(charId, look);
       void uploadLookImages(charId, look.id, data.images, data.referenceImage);
       addMessage({
@@ -356,12 +358,14 @@ export default function ChatPage() {
         content: `（${character.name}が姿を現した！）`,
         systemNote: true,
       });
-      // Open the newborn grace window from this moment (see lib/birth.ts).
+      // Open the newborn grace window from this moment (see lib/birth.ts),
+      // and record chapter 1 — the birth is where her story starts.
       updateCharacter(charId, {
         birth: {
           messageCountAtBirth: useAppStore.getState().gameState.messages.length,
           adjustmentsUsed: 0,
         },
+        chapters: [{ id: 'birth', day: 1 }],
       });
       // Expressions follow silently in the background.
       void generateCoreExpressions(
@@ -440,6 +444,7 @@ export default function ChatPage() {
         const replaced: Look = {
           ...look,
           attributes,
+          day: dayForTurn(freshState.gameState.turnCount),
           images: data.images,
           imageUrls: {},
           referenceImage: data.referenceImage,
@@ -468,6 +473,7 @@ export default function ChatPage() {
       });
       newLook.images = data.images;
       newLook.referenceImage = data.referenceImage;
+      newLook.day = dayForTurn(useAppStore.getState().gameState.turnCount);
       addLook(charId, newLook);
       void uploadLookImages(charId, newLook.id, data.images, data.referenceImage);
       addMessage({
@@ -598,8 +604,50 @@ export default function ChatPage() {
         }
       } else {
         incrementTurn();
+        const newTurnCount = gameState.turnCount + 1;
+        const newDay = dayForTurn(newTurnCount);
+
+        // Day rollover (目的・区切り): one quiet stage-direction note.
+        // Nothing expires, nothing is demanded — time simply passed.
+        if (newDay > dayForTurn(gameState.turnCount)) {
+          addMessage({
+            role: 'character',
+            content: `―― ${newDay}日目のはじまり。`,
+            systemNote: true,
+          });
+        }
+
+        // Chapters: record newly opened chapters; a single quiet note
+        // marks the turn of a chapter, except where an affinity milestone
+        // note already fired for the same threshold this turn.
+        const opened = newChaptersBetween(prevAffinity, nextAffinity).filter(
+          (c) => !(currentCharacter.chapters ?? []).some((r) => r.id === c.id)
+        );
+        if (opened.length > 0) {
+          const milestoneThresholds = new Set(
+            affinityEvents
+              .filter((e) => e.kind === 'milestone')
+              .map((e) => (e as { threshold: number }).threshold)
+          );
+          updateCharacter(currentCharacter.id, {
+            chapters: [
+              ...(currentCharacter.chapters ?? []),
+              ...opened.map((c) => ({ id: c.id, day: newDay })),
+            ],
+          });
+          for (const c of opened) {
+            if (!milestoneThresholds.has(c.affinityFrom)) {
+              addMessage({
+                role: 'character',
+                content: `―― 第${c.number}章「${c.title}」`,
+                systemNote: true,
+              });
+            }
+          }
+        }
+
         // Every MEMORY_SUMMARY_INTERVAL turns, distill long-term memory.
-        summarizeMemoryIfDue(currentCharacter, gameState.turnCount + 1);
+        summarizeMemoryIfDue(currentCharacter, newTurnCount);
         const intent = detectLookChange(trimmed);
         if (intent && currentLook) {
           await triggerLookChange(currentCharacter, intent);
@@ -721,7 +769,8 @@ export default function ChatPage() {
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  {currentCharacter.personality} / {currentEmotion}
+                  {currentCharacter.personality} / {currentEmotion} ・{' '}
+                  {dayForTurn(gameState.turnCount)}日目
                 </p>
               )}
             </div>
