@@ -5,6 +5,7 @@ import { persist, createJSONStorage, type StateStorage } from 'zustand/middlewar
 import type {
   AppSettings,
   Character,
+  CharacterMemory,
   CharacterProfile,
   Emotion,
   GamePhase,
@@ -31,7 +32,11 @@ interface AppState {
 
   // Looks (appearance snapshots) + onboarding profile
   setCharacterProfile: (characterId: string, profile: CharacterProfile) => void;
+  /** Replace a character's long-term memory with a fresh distillation. */
+  setCharacterMemory: (characterId: string, memory: CharacterMemory) => void;
   addLook: (characterId: string, look: Look) => void;
+  /** Swap a look's contents in place (same id): newborn-grace corrections. */
+  replaceLook: (characterId: string, lookId: string, look: Look) => void;
   setCurrentLook: (characterId: string, lookId: string) => void;
   updateLookImages: (
     characterId: string,
@@ -255,6 +260,16 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
+      setCharacterMemory: (characterId, memory) => {
+        set((state) => ({
+          characters: state.characters.map((c) =>
+            c.id === characterId
+              ? { ...c, memory, updatedAt: Date.now() }
+              : c
+          ),
+        }));
+      },
+
       addLook: (characterId, look) => {
         set((state) => ({
           characters: state.characters.map((c) =>
@@ -263,6 +278,22 @@ export const useAppStore = create<AppState>()(
                   ...c,
                   looks: [...(c.looks ?? []), look],
                   currentLookId: look.id,
+                  updatedAt: Date.now(),
+                }
+              : c
+          ),
+        }));
+      },
+
+      replaceLook: (characterId, lookId, look) => {
+        set((state) => ({
+          characters: state.characters.map((c) =>
+            c.id === characterId
+              ? {
+                  ...c,
+                  looks: (c.looks ?? []).map((l) =>
+                    l.id === lookId ? { ...look, id: lookId } : l
+                  ),
                   updatedAt: Date.now(),
                 }
               : c
@@ -329,8 +360,19 @@ export const useAppStore = create<AppState>()(
         if (!data || typeof data !== 'object') return;
         const d = data as { characters?: Character[]; gameState?: GameState };
         set((state) => {
+          // Long-term memory is local-only for now (no DB column yet), so a
+          // cloud snapshot must not wipe it: carry it over by character id.
+          const localMemory = new Map(
+            state.characters
+              .filter((c) => c.memory)
+              .map((c) => [c.id, c.memory] as const)
+          );
           const characters = Array.isArray(d.characters)
-            ? d.characters
+            ? d.characters.map((c) =>
+                !c.memory && localMemory.has(c.id)
+                  ? { ...c, memory: localMemory.get(c.id) }
+                  : c
+              )
             : state.characters;
           if (!d.gameState) return { characters };
           // Null-safe the active character against the restored roster.

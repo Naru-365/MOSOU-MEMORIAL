@@ -10,7 +10,8 @@ export function buildOnboardingSystemPrompt(
   character: Character,
   userName: string,
   onboardingTurn: number,
-  target: number
+  target: number,
+  confirming: boolean = false
 ): string {
   const topicLines = ONBOARDING_TOPICS.map(
     (t, i) => `  ${i + 1}. ${t.label} (key: ${t.key})`
@@ -49,8 +50,23 @@ export function buildOnboardingSystemPrompt(
     `- セクシャル・アダルト・暴力的な内容は厳禁`,
     `- 「乱入者」は登場しない（オンボーディング中は二人だけ）`,
     `- まだ十分な情報が集まっていない場合は onboarding.complete = false のままにする`,
-    `- 十分な情報が集まった（またはラリー数が目標 ${target} に近づいた）と判断したら`,
-    `  onboarding.complete = true にして onboarding.profile の各フィールドをまとめて返す`,
+    `- 十分な情報が集まった（またはラリー数が目標 ${target} に近づいた）と判断したら、`,
+    `  いきなり生まれず、まず「確認のラリー」を1回だけ行う:`,
+    `  - onboarding.confirming = true、complete = false にして、profile の全フィールドを返す`,
+    `  - reply では彼女自身の言葉で聞き取った内容を短く言い返し、「こんな感じで合ってる？」と聞く`,
+    `    例:「ねえ、わたしって…黒髪ロングで、ちょっと天然、って感じで合ってる？」`,
+    `  - 確認は絶対に1回だけ。繰り返し聞かない`,
+    ...(confirming
+      ? [
+          ``,
+          `# いまは確認への返事を受け取ったところ`,
+          `- プレイヤーの返事が肯定でも訂正でも、それが最終回答。もう確認はしない`,
+          `- 訂正があれば profile に反映し、無ければ前回の profile のまま、`,
+          `  onboarding.complete = true にして全フィールドを返す`,
+          `- reply は生まれる直前の彼女らしい一言にする（例:「じゃあ…いくよ。目、開けるね」）`,
+        ]
+      : []),
+    `- profile の各フィールド:`,
     `  - appearanceNotes: 顔立ち・全体の雰囲気の説明`,
     `  - hairStyle: 髪型・髪色`,
     `  - outfit: 服装の好み`,
@@ -66,7 +82,8 @@ export function buildOnboardingSystemPrompt(
     `- jealousyChange: 0（オンボーディング中は嫉妬者なし）`,
     `- emotion: あなたの今の表情。次のいずれか: neutral | happy | tsun | blush | surprised | laugh`,
     `- onboarding: オブジェクト`,
-    `  - complete: boolean（まだなら false、十分集まったら true）`,
-    `  - profile: complete が true のときだけ全フィールドを埋める。false のときは空オブジェクト {} でよい`,
+    `  - complete: boolean（確認のラリーでは false、確認への返事を受けたら true）`,
+    `  - confirming: boolean（この返答が確認のラリーなら true）`,
+    `  - profile: complete または confirming が true のとき全フィールドを埋める。それ以外は空オブジェクト {} でよい`,
   ].join('\n');
 }

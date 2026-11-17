@@ -53,6 +53,22 @@ export interface Look {
   createdAt: number;
 }
 
+/**
+ * Long-term memory (改善3b). The chat API only receives the last 10
+ * messages, so anything older used to be forgotten. Periodically the
+ * conversation is distilled into this summary + durable facts, which the
+ * chat prompt then carries as "what she remembers".
+ */
+export interface CharacterMemory {
+  /** Narrative summary of the relationship / conversation so far. */
+  summary: string;
+  /** Durable facts (player preferences, promises, shared events...). */
+  facts: string[];
+  /** gameState.turnCount at the time of the last distillation. */
+  summarizedTurnCount: number;
+  updatedAt: number;
+}
+
 export interface Character {
   id: string;
   name: string;
@@ -63,6 +79,18 @@ export interface Character {
   profile?: CharacterProfile; // filled during onboarding
   looks?: Look[]; // confirmed appearance snapshots
   currentLookId?: string | null; // active look; null/undefined => formless
+  memory?: CharacterMemory; // long-term conversation memory (改善3b)
+  /**
+   * Birth bookkeeping for the "newborn grace" window (改善1作り直し):
+   * shortly after birth, appearance mentions in conversation quietly
+   * REPLACE the first look instead of piling up new ones.
+   */
+  birth?: {
+    /** gameState.messages.length at the moment of birth. */
+    messageCountAtBirth: number;
+    /** Grace replacements already used (capped, never announced). */
+    adjustmentsUsed: number;
+  };
   /** Set when affinity hit 0 and she vanished. Locks the character from chat. */
   disappeared?: boolean;
   createdAt: number;

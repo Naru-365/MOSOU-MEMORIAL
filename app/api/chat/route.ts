@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import { selectInterrupter } from '@/lib/chat-logic';
 import { buildOnboardingSystemPrompt } from '@/lib/onboarding-prompt';
-import { ONBOARDING_TARGET_RALLIES, shouldCompleteOnboarding } from '@/lib/onboarding';
+import { ONBOARDING_TARGET_RALLIES, resolveOnboardingStage } from '@/lib/onboarding';
+import { buildMemoryPromptSection } from '@/lib/memory';
 import type {
   ChatApiError,
   ChatApiRequest,
@@ -107,6 +108,8 @@ function buildHeroineSystemPrompt(
     `- 現在の好感度（あなたから見たプレイヤーへの好意）: ${affinity}/100`,
     `- 嫉妬度（周囲のライバルキャラの嫉妬）: ${jealousy}/100`,
     `- 会話ターン数: ${turnCount}`,
+    ``,
+    buildMemoryPromptSection(character.memory),
     ``,
     `# キャラ性格の演じ分け`,
     `- 「優しい」: 柔らかく肯定的、語尾「〜だね」「〜かな？」、たまに「えへへ」`,
@@ -238,6 +241,10 @@ const onboardingResponseSchema = {
           type: Type.BOOLEAN,
           description: '十分な情報が集まったら true',
         },
+        confirming: {
+          type: Type.BOOLEAN,
+          description: 'この返答が「確認のラリー」（彼女が聞き取りを言い返して合っているか聞く回）なら true',
+        },
         profile: {
           type: Type.OBJECT,
           properties: {
@@ -299,6 +306,7 @@ export async function POST(req: NextRequest) {
 
   const phase = body.phase ?? 'playing';
   const onboardingTurn = body.onboardingTurn ?? 0;
+  const onboardingConfirming = body.onboardingConfirming ?? false;
   const webGrounding = body.webGrounding ?? false;
 
   if (!character || !userMessage?.trim()) {
@@ -317,7 +325,8 @@ export async function POST(req: NextRequest) {
       character,
       userName,
       onboardingTurn,
-      ONBOARDING_TARGET_RALLIES
+      ONBOARDING_TARGET_RALLIES,
+      onboardingConfirming
     );
 
     try {
@@ -347,13 +356,21 @@ export async function POST(req: NextRequest) {
         affinityChange: number;
         jealousyChange: number;
         emotion: string;
-        onboarding?: { complete?: boolean; profile?: CharacterProfile };
+        onboarding?: {
+          complete?: boolean;
+          confirming?: boolean;
+          profile?: CharacterProfile;
+        };
       };
 
-      const complete = shouldCompleteOnboarding(
-        onboardingTurn + 1,
-        Boolean(parsed.onboarding?.complete)
-      );
+      // Two-step completion: one in-character confirmation rally, then the
+      // birth — never a loop (see resolveOnboardingStage).
+      const stage = resolveOnboardingStage({
+        onboardingTurn: onboardingTurn + 1,
+        modelSaysComplete: Boolean(parsed.onboarding?.complete),
+        modelSaysConfirming: Boolean(parsed.onboarding?.confirming),
+        wasConfirming: onboardingConfirming,
+      });
 
       const emotion = (
         HEROINE_EMOTIONS.includes(parsed.emotion as Emotion)
@@ -368,7 +385,8 @@ export async function POST(req: NextRequest) {
         jealousyChange: clamp(Math.round(parsed.jealousyChange ?? 0), -15, 15),
         emotion,
         onboarding: {
-          complete,
+          complete: stage.complete,
+          confirming: stage.confirming,
           profile: parsed.onboarding?.profile,
         },
       };

@@ -1,5 +1,6 @@
 import type {
   Character,
+  CharacterMemory,
   CharacterProfile,
   Emotion,
   GamePhase,
@@ -24,6 +25,8 @@ export interface ChatApiRequest {
   phase?: GamePhase;
   /** Rallies elapsed in onboarding so far (drives "wrap it up" guidance). */
   onboardingTurn?: number;
+  /** True when the previous reply was the one in-character confirmation rally. */
+  onboardingConfirming?: boolean;
   /** When true (playing only), pre-fetch real-world facts via Google Search. */
   webGrounding?: boolean;
 }
@@ -34,6 +37,12 @@ export type ChatApiSpeaker = 'character' | 'interrupter';
 export interface OnboardingResult {
   /** True when the heroine has gathered enough to be "born" (generate a look). */
   complete: boolean;
+  /**
+   * True when this reply is the single in-character confirmation rally
+   * ("こんな感じで合ってる？"). The player's next message — any answer —
+   * completes the birth; confirmation never repeats.
+   */
+  confirming?: boolean;
   /** Collected preferences; present (at least partially) once complete. */
   profile?: CharacterProfile;
 }
@@ -149,6 +158,28 @@ export interface UploadLookResponse {
 export interface UploadLookError {
   error: string;
   code?: 'NO_SUPABASE' | 'BAD_REQUEST' | 'TOO_LARGE' | 'UPLOAD_FAILED';
+}
+
+// ----- /api/memory/summarize request/response -----
+// Folds a recent transcript window into the character's long-term memory.
+
+export interface SummarizeMemoryRequest {
+  characterName: string;
+  userName: string;
+  /** Existing memory to merge into (the new result replaces it wholesale). */
+  existingMemory?: CharacterMemory;
+  /** Recent messages, oldest first. System notes are ignored server-side. */
+  messages: Message[];
+}
+
+export interface SummarizeMemoryResponse {
+  summary: string;
+  facts: string[];
+}
+
+export interface SummarizeMemoryError {
+  error: string;
+  code?: 'NO_API_KEY' | 'GEMINI_FAILED' | 'BAD_REQUEST';
 }
 
 // ----- /api/sync request/response -----
