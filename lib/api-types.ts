@@ -68,7 +68,7 @@ export interface ChatApiResponse {
 
 export interface ChatApiError {
   error: string;
-  code?: 'NO_API_KEY' | 'GEMINI_FAILED' | 'BAD_REQUEST';
+  code?: 'NO_API_KEY' | 'GEMINI_FAILED' | 'BAD_REQUEST' | 'RATE_LIMITED';
 }
 
 // ----- /api/generate-look request/response -----
@@ -111,7 +111,7 @@ export interface GenerateLookResponse {
 export interface GenerateLookError {
   error: string;
   /** NO_IMAGE_API => no OPENAI_API_KEY configured; UI degrades to silhouette. */
-  code?: 'NO_IMAGE_API' | 'OPENAI_FAILED' | 'BAD_REQUEST';
+  code?: 'NO_IMAGE_API' | 'OPENAI_FAILED' | 'BAD_REQUEST' | 'MINOR_STAGE' | 'RATE_LIMITED';
 }
 
 // ----- /api/generate-background request/response -----
@@ -187,7 +187,7 @@ export interface SummarizeMemoryResponse {
 
 export interface SummarizeMemoryError {
   error: string;
-  code?: 'NO_API_KEY' | 'GEMINI_FAILED' | 'BAD_REQUEST';
+  code?: 'NO_API_KEY' | 'GEMINI_FAILED' | 'BAD_REQUEST' | 'RATE_LIMITED';
 }
 
 // ----- /api/sync request/response -----

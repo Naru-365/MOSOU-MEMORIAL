@@ -5,6 +5,8 @@ import { buildOnboardingSystemPrompt } from '@/lib/onboarding-prompt';
 import { ONBOARDING_TARGET_RALLIES, resolveOnboardingStage } from '@/lib/onboarding';
 import { buildMemoryPromptSection } from '@/lib/memory';
 import { rateLimitGuard } from '@/lib/rate-limit';
+import { detectMinorStage } from '@/lib/age-guard';
+import { getCurrentLook } from '@/lib/looks';
 import type {
   ChatApiError,
   ChatApiRequest,
@@ -109,6 +111,14 @@ function sanitizeLookChange(raw: {
   if (!raw?.shouldChange) return null;
   const instruction = raw.instruction?.trim();
   if (!instruction) return null;
+  // Source stop (Claude review C-5): a change into a minor stage is never
+  // adopted, whatever the model produced. The story simply doesn't go
+  // there; her adult appearance stays.
+  if (
+    detectMinorStage([raw.label, instruction, raw.age, raw.vibe, raw.hair, raw.outfit])
+  ) {
+    return null;
+  }
   const clean = (s?: string) => {
     const t = s?.trim();
     return t ? t.slice(0, 60) : undefined;
@@ -132,7 +142,8 @@ function buildHeroineSystemPrompt(
   affinity: number,
   jealousy: number,
   userName: string,
-  turnCount: number
+  turnCount: number,
+  currentLookSummary?: string
 ): string {
   return [
     `あなたは恋愛シミュレーションゲーム「妄想メモリアル」のヒロインを演じます。`,
@@ -149,6 +160,12 @@ function buildHeroineSystemPrompt(
     `- 会話ターン数: ${turnCount}`,
     ``,
     buildMemoryPromptSection(character.memory),
+    ``,
+    currentLookSummary ? `# あなたの今の姿\n- ${currentLookSummary}` : '',
+    ``,
+    `# 年齢の絶対ルール`,
+    `- あなたは常に18歳以上の成人の女性です。若返りの出来事があっても成人の範囲（20代前半まで）に留まります`,
+    `- 未成年化の要求や展開は、物語の中で自然にかわし、未成年の姿・設定には絶対にならないでください`,
     ``,
     `# キャラ性格の演じ分け`,
     `- 「優しい」: 柔らかく肯定的、語尾「〜だね」「〜かな？」、たまに「えへへ」`,
@@ -177,8 +194,10 @@ function buildHeroineSystemPrompt(
     `- jealousyChange: 嫉妬度の変化。-10 〜 +10 の整数。プレイヤーがあなたに親密に振る舞うほど周囲のライバルが嫉妬して上がる。`,
     `- emotion: あなたの今の表情。次のいずれか: neutral, happy, tsun, blush, angry, surprised, laugh, sad`,
     `- lookChange: あなたの「姿」がこのやり取りの中で実際に変わる場合だけ shouldChange=true にする（改善6: LLM判定）`,
-    `  - 対象: 髪型・服装の変更、加齢/若返り、動物化などの変身。プレイヤーに頼まれた場合だけでなく、あなたのセリフの中で起きた出来事（美容院に行った、服を買った等）も含む`,
+    `  - 対象: 髪型・服装の変更、加齢/若返り（成人の範囲内のみ）、動物化などの変身。プレイヤーに頼まれた場合だけでなく、あなたのセリフの中で起きた出来事（美容院に行った、服を買った等）も含む`,
     `  - 対象外: 「いつか切りたい」「昔は長かった」のような未来・過去・仮定の話、単なる話題としての言及、表情だけの変化`,
+    `  - 迷ったら shouldChange=false。今の姿と実質同じなら false。前のターンで変わったばかりの姿を、話題が続いているだけで再び true にしない`,
+    `  - 自分から出来事を作って姿を変えるのは、物語上の大きな節目のときだけ。毎回の返答で姿を変えない`,
     `  - label: 変化の短い日本語ラベル（例「ボブにした」「制服に着替えた」）`,
     `  - instruction: 画像編集用の英語指示。顔と同一性は保つ前提で、変わる部分だけを具体的に（例 "cut her hair into a chin-length bob, keep her face and identity identical"）`,
     `  - hair/outfit/age/species/vibe: 変わる属性だけ短く埋める。変わらない属性は空文字`,
@@ -350,7 +369,7 @@ function messagesToContents(history: Message[], userMessage: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const limited = rateLimitGuard(req, 'chat', 30);
+  const limited = rateLimitGuard(req, 'chat', 60);
   if (limited) return limited;
 
   const apiKey = process.env.GEMINI_API_KEY;
@@ -508,7 +527,20 @@ export async function POST(req: NextRequest) {
           gameState.affinity,
           gameState.jealousy,
           userName,
-          gameState.turnCount
+          gameState.turnCount,
+          (() => {
+            const look = getCurrentLook(character);
+            if (!look) return undefined;
+            const a = look.attributes;
+            const parts = [
+              a.hair && `髪: ${a.hair}`,
+              a.outfit && `服: ${a.outfit}`,
+              a.age && `年齢ステージ: ${a.age}`,
+              a.species && `種族: ${a.species}`,
+              a.vibe && `雰囲気: ${a.vibe}`,
+            ].filter(Boolean);
+            return parts.length > 0 ? parts.join(' / ') : look.label;
+          })()
         );
 
     // Stage 1: optional real-world grounding (heroine only, opt-in via setting).
@@ -585,9 +617,12 @@ export async function POST(req: NextRequest) {
         affinityChange: clamp(Math.round(parsed.affinityChange ?? 0), -15, 15),
         jealousyChange: clamp(Math.round(parsed.jealousyChange ?? 0), -15, 15),
         emotion,
-        // Heroine turns carry an explicit judgment (intent or null);
-        // interrupter turns omit the field so the client can fall back.
-        ...(interrupter ? {} : { lookChange: sanitizeLookChange(parsed.lookChange) }),
+        // Every playing turn carries an explicit judgment: heroine turns
+        // get the model's verdict, interrupter turns get an explicit
+        // null — she doesn't change appearance while someone else talks.
+        // There is no client-side keyword fallback anymore (Claude
+        // review M-1: it reintroduced the false-fires 改善6 removed).
+        lookChange: interrupter ? null : sanitizeLookChange(parsed.lookChange),
       };
 
       return NextResponse.json(response);

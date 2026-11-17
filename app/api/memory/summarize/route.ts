@@ -34,7 +34,7 @@ const responseSchema = {
 };
 
 export async function POST(req: NextRequest) {
-  const limited = rateLimitGuard(req, 'memory-summarize', 10);
+  const limited = rateLimitGuard(req, 'memory-summarize', 15);
   if (limited) return limited;
 
   const apiKey = process.env.GEMINI_API_KEY;

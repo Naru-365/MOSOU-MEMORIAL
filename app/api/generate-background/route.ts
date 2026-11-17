@@ -18,7 +18,7 @@ const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const SAVE_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
 export async function POST(req: NextRequest) {
-  const limited = rateLimitGuard(req, 'generate-background', 6);
+  const limited = rateLimitGuard(req, 'generate-background', 8);
   if (limited) return limited;
 
   const apiKey = process.env.OPENAI_API_KEY;

@@ -29,7 +29,7 @@ import type {
   GenerateBackgroundResponse,
   CharacterSessionResponse,
 } from '@/lib/api-types';
-import { getCurrentLook, detectLookChange, createLook, mergeLookAttributes } from '@/lib/looks';
+import { getCurrentLook, createLook, mergeLookAttributes } from '@/lib/looks';
 import type { LookChangeIntent } from '@/lib/looks';
 import { isBirthGraceActive } from '@/lib/birth';
 import {
@@ -50,6 +50,9 @@ import type {
 import { detectSceneChange } from '@/lib/scenes';
 import { ONBOARDING_TARGET_RALLIES } from '@/lib/onboarding';
 import { dayForTurn, newChaptersBetween } from '@/lib/chapters';
+
+/** Playing turns that must pass between two appearance changes. */
+const LOOK_CHANGE_COOLDOWN_TURNS = 5;
 
 const HEROINE_EMOTIONS: Emotion[] = [
   'neutral',
@@ -256,6 +259,9 @@ export default function ChatPage() {
   // turn (Claude review, Major) — the machinery never nags.
   const summarizingRef = useRef(false);
   const lastSummaryAttemptRef = useRef<{ characterId: string; turn: number } | null>(null);
+  // Silent cooldown between appearance changes (never surfaced to the
+  // player): stops one lingering topic from re-firing paid generations.
+  const lastLookChangeTurnRef = useRef(0);
   const summarizeMemoryIfDue = (character: Character, turnCount: number) => {
     if (summarizingRef.current) return;
     if (!isMemorySummaryDue(character.memory, turnCount)) return;
@@ -650,14 +656,18 @@ export default function ChatPage() {
         summarizeMemoryIfDue(currentCharacter, newTurnCount);
         // Appearance change (改善6): the chat model's judgment rides the
         // response — it sees her reply too, so story events (美容院に行った)
-        // fire, and hypotheticals ("いつか切りたい") don't. The keyword
-        // detector remains only as a fallback for turns the server did
-        // not judge (interrupter turns / older servers).
-        const intent =
-          data.lookChange !== undefined
-            ? data.lookChange
-            : detectLookChange(trimmed);
-        if (intent && currentLook) {
+        // fire, and hypotheticals ("いつか切りたい") don't. Every playing
+        // turn carries an explicit judgment (null = no change), so there
+        // is no keyword fallback. A silent cooldown after each change
+        // keeps the same topic from re-firing paid generations while the
+        // conversation lingers on it (Claude review M-2).
+        const intent = data.lookChange ?? null;
+        if (
+          intent &&
+          currentLook &&
+          newTurnCount - lastLookChangeTurnRef.current >= LOOK_CHANGE_COOLDOWN_TURNS
+        ) {
+          lastLookChangeTurnRef.current = newTurnCount;
           await triggerLookChange(currentCharacter, intent);
         }
         const sceneIntent = detectSceneChange(trimmed);

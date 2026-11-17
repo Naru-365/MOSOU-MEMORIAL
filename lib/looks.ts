@@ -52,11 +52,13 @@ export function mergeLookAttributes(
 }
 
 // --- Look-change detection from free chat -------------------------------------
-// Primary detection is the chat model's own judgment, returned with the
-// reply (改善6: it sees the heroine's reply too, so story events fire and
-// hypotheticals don't). These deterministic keyword triggers remain as a
-// fallback for turns the server did not judge (interrupter turns, older
-// servers) — they only ever see the player's raw message.
+// Detection is the chat model's own judgment, returned with the reply
+// (改善6: it sees the heroine's reply too, so story events fire and
+// hypotheticals don't). The keyword detector below is NO LONGER wired
+// into the chat screen: on interrupter turns it reintroduced exactly
+// the false-fires 改善6 removed, and client/server deploy together so
+// an "older server" fallback has no real window (Claude review M-1).
+// Kept only as a reference implementation of the trigger vocabulary.
 
 export interface LookChangeIntent {
   /** Human label for the new look, e.g. "ボブにした". */
@@ -101,8 +103,9 @@ const LOOK_TRIGGERS: LookTrigger[] = [
     keywords: ['タイムスリップ', '若返', '子供の頃', '過去に戻', '昔'],
     build: () => ({
       label: '若返った',
-      instruction: 'make her much younger (a child/teen version), keep her face and identity recognizable',
-      attributes: { age: '若い' },
+      // Adult range only — she is always an adult (see the age guard).
+      instruction: 'make her look like a younger adult in her early twenties, keep her face and identity recognizable',
+      attributes: { age: '若い（成人）' },
     }),
   },
   {

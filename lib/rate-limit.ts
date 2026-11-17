@@ -38,11 +38,24 @@ export function checkRateLimit(
   return { ok: true, retryAfterSec: 0 };
 }
 
-/** Best-effort client key from proxy headers. */
+/**
+ * Best-effort client key from proxy headers. Preference order matters:
+ * the platform-set header first (Vercel overwrites it and clients
+ * cannot spoof it there), then the LAST x-forwarded-for entry (the one
+ * appended by the closest proxy — earlier entries are client-supplied
+ * and spoofable). Callers without any header share the 'unknown'
+ * bucket; on the target platform every request carries one, so this
+ * is a local-dev corner, documented in docs/public-guards.md.
+ */
 export function clientKey(req: Request): string {
+  const vercel = req.headers.get('x-vercel-forwarded-for');
+  if (vercel) return vercel.split(',')[0]?.trim() || 'unknown';
   const forwarded = req.headers.get('x-forwarded-for');
-  const ip = forwarded?.split(',')[0]?.trim() || req.headers.get('x-real-ip');
-  return ip || 'unknown';
+  if (forwarded) {
+    const parts = forwarded.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1];
+  }
+  return req.headers.get('x-real-ip') || 'unknown';
 }
 
 /**
