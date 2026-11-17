@@ -16,12 +16,12 @@ import type {
   CharacterProfile,
   Emotion,
   InterrupterEmotion,
+  Look,
 } from '@/lib/types';
 import type {
   ChatApiError,
   ChatApiRequest,
   ChatApiResponse,
-  GenerateLookError,
   GenerateLookRequest,
   GenerateLookResponse,
   UploadLookResponse,
@@ -31,8 +31,25 @@ import type {
 } from '@/lib/api-types';
 import { getCurrentLook, detectLookChange, createLook, mergeLookAttributes } from '@/lib/looks';
 import type { LookChangeIntent } from '@/lib/looks';
+import { isBirthGraceActive } from '@/lib/birth';
+import {
+  CORE_EXPRESSION_EMOTIONS,
+  EXPRESSION_ONLY_INSTRUCTION,
+  pickExpressionImages,
+} from '@/lib/emotion';
+import {
+  MEMORY_RETRY_INTERVAL,
+  MEMORY_SUMMARY_WINDOW,
+  isMemorySummaryDue,
+  normalizeMemory,
+} from '@/lib/memory';
+import type {
+  SummarizeMemoryRequest,
+  SummarizeMemoryResponse,
+} from '@/lib/api-types';
 import { detectSceneChange } from '@/lib/scenes';
 import { ONBOARDING_TARGET_RALLIES } from '@/lib/onboarding';
+import { dayForTurn, newChaptersBetween } from '@/lib/chapters';
 
 const HEROINE_EMOTIONS: Emotion[] = [
   'neutral',
@@ -63,6 +80,10 @@ export default function ChatPage() {
   const [vanishing, setVanishing] = useState(false);
   const [generatingBg, setGeneratingBg] = useState(false);
   const [bgPreview, setBgPreview] = useState<string | null>(null);
+  // Birth (改善1作り直し): the confirmation is a single in-character rally
+  // at the end of onboarding — this flag just carries "she already asked"
+  // to the API so the next answer completes the birth (never a loop).
+  const [onboardingConfirming, setOnboardingConfirming] = useState(false);
 
   const {
     gameState,
@@ -77,7 +98,11 @@ export default function ChatPage() {
     incrementOnboardingTurn,
     setGeneratingLook,
     setCharacterProfile,
+    setCharacterMemory,
+    updateCharacter,
     addLook,
+    replaceLook,
+    updateLookImages,
     markCharacterDisappeared,
     setLookImageUrls,
     hydrateCharacterSession,
@@ -126,6 +151,7 @@ export default function ChatPage() {
     const cid = gameState.currentCharacterId;
     if (!cid || hydratedCharRef.current === cid) return;
     hydratedCharRef.current = cid;
+    setOnboardingConfirming(false);
     let cancelled = false;
     (async () => {
       try {
@@ -184,7 +210,109 @@ export default function ChatPage() {
     }
   };
 
-  // --- First look generation (end of onboarding) -----------------------------
+  // --- Core expressions for a confirmed look (改善2) --------------------------
+  // Generates happy / blush / tsun as identity-preserving edits of the look's
+  // neutral reference, in the background. Fully silent by design (没入の核):
+  // no spinner, no announcement note — the first time a conversation reply
+  // comes back "happy", the smile is simply there. Failures are silent too:
+  // the display keeps falling back to neutral for that emotion.
+  const generateCoreExpressions = async (
+    character: Character,
+    lookId: string,
+    referenceImage: string
+  ) => {
+    try {
+      const body: GenerateLookRequest = {
+        characterName: character.name,
+        profile: character.profile,
+        referenceImage,
+        changeInstruction: EXPRESSION_ONLY_INSTRUCTION,
+        emotions: [...CORE_EXPRESSION_EMOTIONS],
+        quality: 'low',
+      };
+      const res = await fetch('/api/generate-look', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        console.error('[generate-look] expressions failed:', res.status);
+        return;
+      }
+      const data = (await res.json()) as GenerateLookResponse;
+      const expressions = pickExpressionImages(data.images);
+      if (Object.keys(expressions).length === 0) return;
+      updateLookImages(character.id, lookId, expressions);
+      void uploadLookImages(character.id, lookId, expressions);
+    } catch (e) {
+      console.error('[generate-look] expressions error:', e);
+    }
+  };
+
+  // --- Long-term memory distillation (改善3b) --------------------------------
+  // Fire-and-forget: folds the recent transcript into character.memory via
+  // /api/memory/summarize. Failures are silent AND throttled: after a failed
+  // attempt we wait MEMORY_RETRY_INTERVAL turns instead of calling every
+  // turn (Claude review, Major) — the machinery never nags.
+  const summarizingRef = useRef(false);
+  const lastSummaryAttemptRef = useRef<{ characterId: string; turn: number } | null>(null);
+  const summarizeMemoryIfDue = (character: Character, turnCount: number) => {
+    if (summarizingRef.current) return;
+    if (!isMemorySummaryDue(character.memory, turnCount)) return;
+    const lastAttempt = lastSummaryAttemptRef.current;
+    if (
+      lastAttempt &&
+      lastAttempt.characterId === character.id &&
+      turnCount - lastAttempt.turn < MEMORY_RETRY_INTERVAL
+    ) {
+      return;
+    }
+    summarizingRef.current = true;
+    lastSummaryAttemptRef.current = { characterId: character.id, turn: turnCount };
+    void (async () => {
+      try {
+        const fresh = useAppStore.getState();
+        const freshCharacter =
+          fresh.characters.find((c) => c.id === character.id) ?? character;
+        const body: SummarizeMemoryRequest = {
+          characterName: freshCharacter.name,
+          userName: settings.userName,
+          existingMemory: freshCharacter.memory,
+          // Exclude system notes BEFORE slicing, so the window really
+          // covers MEMORY_SUMMARY_WINDOW conversational messages.
+          messages: fresh.gameState.messages
+            .filter((m) => !m.systemNote)
+            .slice(-MEMORY_SUMMARY_WINDOW),
+        };
+        const res = await fetch('/api/memory/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          console.error('[memory/summarize] failed:', res.status);
+          return;
+        }
+        const data = (await res.json()) as SummarizeMemoryResponse;
+        setCharacterMemory(
+          character.id,
+          normalizeMemory(data, turnCount)
+        );
+        lastSummaryAttemptRef.current = null;
+      } catch (e) {
+        console.error('[memory/summarize] error:', e);
+      } finally {
+        summarizingRef.current = false;
+      }
+    })();
+  };
+
+  // --- Birth (end of onboarding), inside the conversation -------------------
+  // One generation, in the chat: the hero area shows her silhouette while
+  // the portrait is drawn, then she is simply there. No forms, no candidate
+  // grids (改善1作り直し — the BirthFlow version broke the core concept).
+  // Failure keeps the old graceful degradation: placeholder look, silhouette
+  // play, birth never hard-blocks.
   const generateFirstLook = async (
     character: Character,
     profile: CharacterProfile
@@ -195,9 +323,6 @@ export default function ChatPage() {
       const body: GenerateLookRequest = {
         characterName: character.name,
         profile,
-        // Neutral only: one image (~20s) instead of three (~60s). The display
-        // falls back to neutral for every emotion, and the route degrades
-        // gracefully, so the heroine reliably "appears" without timing out.
         emotions: ['neutral'],
         quality: 'low',
       };
@@ -208,11 +333,10 @@ export default function ChatPage() {
       });
 
       if (!res.ok) {
-        // Distinguish "no key" from "generation failed" so the note is accurate.
-        const err = (await res
-          .json()
-          .catch(() => null)) as GenerateLookError | null;
-        console.error('[generate-look] failed:', res.status, err);
+        const err = (await res.json().catch(() => null)) as {
+          code?: string;
+        } | null;
+        console.error('[generate-look] birth failed:', res.status, err);
         const note =
           err?.code === 'NO_IMAGE_API'
             ? '（画像生成キー(OPENAI_API_KEY)が未設定のため、シルエットで進めるよ）'
@@ -226,6 +350,7 @@ export default function ChatPage() {
       const look = createLook('初期', {}, { basePrompt: data.basePrompt });
       look.images = data.images;
       look.referenceImage = data.referenceImage;
+      look.day = 1;
       addLook(charId, look);
       void uploadLookImages(charId, look.id, data.images, data.referenceImage);
       addMessage({
@@ -233,8 +358,23 @@ export default function ChatPage() {
         content: `（${character.name}が姿を現した！）`,
         systemNote: true,
       });
+      // Open the newborn grace window from this moment (see lib/birth.ts),
+      // and record chapter 1 — the birth is where her story starts.
+      updateCharacter(charId, {
+        birth: {
+          messageCountAtBirth: useAppStore.getState().gameState.messages.length,
+          adjustmentsUsed: 0,
+        },
+        chapters: [{ id: 'birth', day: 1 }],
+      });
+      // Expressions follow silently in the background.
+      void generateCoreExpressions(
+        { ...character, profile },
+        look.id,
+        data.referenceImage
+      );
     } catch (e) {
-      console.error('[generate-look] error:', e);
+      console.error('[generate-look] birth error:', e);
       addLook(charId, createLook('初期(仮)', {}));
       addMessage({
         role: 'character',
@@ -292,11 +432,48 @@ export default function ChatPage() {
       }
 
       const data = (await res.json()) as GenerateLookResponse;
+
+      // Newborn grace (改善1作り直し): right after birth, an appearance
+      // mention quietly REPLACES the first look instead of adding a new
+      // one — she is still settling into her face, and the album should
+      // not fill with near-duplicates. Nothing announces the window.
+      const freshState = useAppStore.getState();
+      const freshCharacter =
+        freshState.characters.find((c) => c.id === charId) ?? character;
+      if (isBirthGraceActive(freshCharacter, freshState.gameState.messages.length)) {
+        const replaced: Look = {
+          ...look,
+          attributes,
+          day: dayForTurn(freshState.gameState.turnCount),
+          images: data.images,
+          imageUrls: {},
+          referenceImage: data.referenceImage,
+          referenceImageUrl: undefined,
+          basePrompt: data.basePrompt,
+        };
+        replaceLook(charId, look.id, replaced);
+        void uploadLookImages(charId, look.id, data.images, data.referenceImage);
+        addMessage({
+          role: 'character',
+          content: `（${intent.label}）`,
+          systemNote: true,
+        });
+        updateCharacter(charId, {
+          birth: {
+            messageCountAtBirth: freshCharacter.birth!.messageCountAtBirth,
+            adjustmentsUsed: freshCharacter.birth!.adjustmentsUsed + 1,
+          },
+        });
+        void generateCoreExpressions(character, look.id, data.referenceImage);
+        return;
+      }
+
       const newLook = createLook(intent.label, attributes, {
         basePrompt: data.basePrompt,
       });
       newLook.images = data.images;
       newLook.referenceImage = data.referenceImage;
+      newLook.day = dayForTurn(useAppStore.getState().gameState.turnCount);
       addLook(charId, newLook);
       void uploadLookImages(charId, newLook.id, data.images, data.referenceImage);
       addMessage({
@@ -304,6 +481,8 @@ export default function ChatPage() {
         content: `（${intent.label}）`,
         systemNote: true,
       });
+      // The new look needs its own expression set (edits of its neutral).
+      void generateCoreExpressions(character, newLook.id, data.referenceImage);
     } catch {
       addMessage({
         role: 'character',
@@ -337,7 +516,11 @@ export default function ChatPage() {
       history: gameState.messages.slice(-10),
       webGrounding: settings.webGrounding,
       ...(isOnboarding
-        ? { phase: 'onboarding', onboardingTurn: gameState.onboardingTurn }
+        ? {
+            phase: 'onboarding',
+            onboardingTurn: gameState.onboardingTurn,
+            onboardingConfirming,
+          }
         : {}),
     };
 
@@ -408,10 +591,63 @@ export default function ChatPage() {
         if (data.onboarding?.complete) {
           const profile = data.onboarding.profile ?? {};
           setCharacterProfile(currentCharacter.id, profile);
+          setOnboardingConfirming(false);
+          // She is born right here in the conversation — one generation.
           await generateFirstLook(currentCharacter, profile);
+        } else if (data.onboarding?.confirming) {
+          // She just asked "こんな感じで合ってる？" in her own words. The
+          // next message (any answer) completes the birth; save the draft.
+          if (data.onboarding.profile) {
+            setCharacterProfile(currentCharacter.id, data.onboarding.profile);
+          }
+          setOnboardingConfirming(true);
         }
       } else {
         incrementTurn();
+        const newTurnCount = gameState.turnCount + 1;
+        const newDay = dayForTurn(newTurnCount);
+
+        // Day rollover (目的・区切り): one quiet stage-direction note.
+        // Nothing expires, nothing is demanded — time simply passed.
+        if (newDay > dayForTurn(gameState.turnCount)) {
+          addMessage({
+            role: 'character',
+            content: `―― ${newDay}日目のはじまり。`,
+            systemNote: true,
+          });
+        }
+
+        // Chapters: record newly opened chapters; a single quiet note
+        // marks the turn of a chapter, except where an affinity milestone
+        // note already fired for the same threshold this turn.
+        const opened = newChaptersBetween(prevAffinity, nextAffinity).filter(
+          (c) => !(currentCharacter.chapters ?? []).some((r) => r.id === c.id)
+        );
+        if (opened.length > 0) {
+          const milestoneThresholds = new Set(
+            affinityEvents
+              .filter((e) => e.kind === 'milestone')
+              .map((e) => (e as { threshold: number }).threshold)
+          );
+          updateCharacter(currentCharacter.id, {
+            chapters: [
+              ...(currentCharacter.chapters ?? []),
+              ...opened.map((c) => ({ id: c.id, day: newDay })),
+            ],
+          });
+          for (const c of opened) {
+            if (!milestoneThresholds.has(c.affinityFrom)) {
+              addMessage({
+                role: 'character',
+                content: `―― 第${c.number}章「${c.title}」`,
+                systemNote: true,
+              });
+            }
+          }
+        }
+
+        // Every MEMORY_SUMMARY_INTERVAL turns, distill long-term memory.
+        summarizeMemoryIfDue(currentCharacter, newTurnCount);
         const intent = detectLookChange(trimmed);
         if (intent && currentLook) {
           await triggerLookChange(currentCharacter, intent);
@@ -533,7 +769,8 @@ export default function ChatPage() {
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  {currentCharacter.personality} / {currentEmotion}
+                  {currentCharacter.personality} / {currentEmotion} ・{' '}
+                  {dayForTurn(gameState.turnCount)}日目
                 </p>
               )}
             </div>

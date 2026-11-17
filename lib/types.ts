@@ -51,6 +51,32 @@ export interface Look {
   referenceImageUrl?: string; // neutral Storage public URL
   basePrompt?: string; // locked identity+look prompt used to generate
   createdAt: number;
+  /** In-game day this look was born/changed on (目的・区切り). Optional:
+   *  looks from older saves simply have no day. */
+  day?: number;
+}
+
+/** A reached story chapter (see lib/chapters.ts). */
+export interface ChapterRecord {
+  id: string;
+  /** In-game day the chapter was reached. */
+  day: number;
+}
+
+/**
+ * Long-term memory (改善3b). The chat API only receives the last 10
+ * messages, so anything older used to be forgotten. Periodically the
+ * conversation is distilled into this summary + durable facts, which the
+ * chat prompt then carries as "what she remembers".
+ */
+export interface CharacterMemory {
+  /** Narrative summary of the relationship / conversation so far. */
+  summary: string;
+  /** Durable facts (player preferences, promises, shared events...). */
+  facts: string[];
+  /** gameState.turnCount at the time of the last distillation. */
+  summarizedTurnCount: number;
+  updatedAt: number;
 }
 
 export interface Character {
@@ -63,6 +89,24 @@ export interface Character {
   profile?: CharacterProfile; // filled during onboarding
   looks?: Look[]; // confirmed appearance snapshots
   currentLookId?: string | null; // active look; null/undefined => formless
+  memory?: CharacterMemory; // long-term conversation memory (改善3b)
+  /**
+   * Birth bookkeeping for the "newborn grace" window (改善1作り直し):
+   * shortly after birth, appearance mentions in conversation quietly
+   * REPLACE the first look instead of piling up new ones.
+   */
+  birth?: {
+    /** gameState.messages.length at the moment of birth. */
+    messageCountAtBirth: number;
+    /** Grace replacements already used (capped, never announced). */
+    adjustmentsUsed: number;
+  };
+  /**
+   * Story chapters reached so far (目的・区切り, lib/chapters.ts). Chapter 1
+   * is the birth itself; later chapters unlock as affinity deepens. Records
+   * are append-only and local (same persistence story as `memory`).
+   */
+  chapters?: ChapterRecord[];
   /** Set when affinity hit 0 and she vanished. Locks the character from chat. */
   disappeared?: boolean;
   createdAt: number;

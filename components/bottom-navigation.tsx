@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Users, MessageCircle, Settings } from 'lucide-react';
+import { Home, Users, MessageCircle, Settings, BookHeart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { href: '/', icon: Home, label: 'ホーム' },
   { href: '/characters', icon: Users, label: 'キャラクター' },
   { href: '/chat', icon: MessageCircle, label: 'チャット' },
+  { href: '/memorial', icon: BookHeart, label: 'メモリアル' },
   { href: '/settings', icon: Settings, label: '設定' },
 ];
 

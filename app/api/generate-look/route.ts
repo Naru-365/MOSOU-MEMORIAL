@@ -33,12 +33,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Ensure 'neutral' is always included so we always have a reference image
+  // Fresh generations must include 'neutral' (it becomes the reference).
+  // Edit calls already carry a reference, so they generate exactly what was
+  // asked for — expression-only calls skip a redundant neutral regeneration.
   const requestedEmotions: Emotion[] =
     body.emotions && body.emotions.length > 0 ? body.emotions : ['neutral'];
-  const emotions: Emotion[] = requestedEmotions.includes('neutral')
-    ? requestedEmotions
-    : ['neutral', ...requestedEmotions];
+  const emotions: Emotion[] =
+    requestedEmotions.includes('neutral') || referenceImage
+      ? requestedEmotions
+      : ['neutral', ...requestedEmotions];
 
   const size = body.size ?? '1024x1536';
   const quality = body.quality ?? 'low';
@@ -96,10 +99,12 @@ export async function POST(req: NextRequest) {
     }
   };
 
-  // 'neutral' is the reference image and MUST succeed (retry once on a transient
-  // failure). Other emotions are best-effort: a failure degrades to the neutral
-  // image (see resolveCharacterAsset) instead of failing the whole look — so a
-  // single flaky generation never drops the user back to a silhouette.
+  // A requested 'neutral' is ALWAYS required (retry once on a transient
+  // failure). Callers that ask for a new neutral — first look, appearance
+  // changes, micro-adjustments — are asking for a NEW portrait; silently
+  // returning the input reference as if it were the new image would fake a
+  // successful change (Claude review, Critical). Expression-only calls do
+  // not request neutral, so they stay best-effort per emotion.
   for (const emotion of emotions) {
     const required = emotion === 'neutral';
     let img = await generateOne(emotion);
@@ -116,7 +121,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const referenceImageOut = images['neutral'];
+  // Nothing at all was generated (e.g. every requested expression failed):
+  // that is a failure, not a success carrying zero images.
+  if (Object.keys(images).length === 0) {
+    return NextResponse.json<GenerateLookError>(
+      { error: 'OpenAI failed to generate any image', code: 'OPENAI_FAILED' },
+      { status: 502 }
+    );
+  }
+
+  // Expression-only calls make no new neutral; the supplied reference stays
+  // the reference. A requested-and-generated neutral always wins.
+  const referenceImageOut = images['neutral'] ?? referenceImage;
   if (!referenceImageOut) {
     return NextResponse.json<GenerateLookError>(
       { error: 'No neutral image available as reference', code: 'OPENAI_FAILED' },
