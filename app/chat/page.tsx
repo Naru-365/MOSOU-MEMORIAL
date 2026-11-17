@@ -648,7 +648,15 @@ export default function ChatPage() {
 
         // Every MEMORY_SUMMARY_INTERVAL turns, distill long-term memory.
         summarizeMemoryIfDue(currentCharacter, newTurnCount);
-        const intent = detectLookChange(trimmed);
+        // Appearance change (改善6): the chat model's judgment rides the
+        // response — it sees her reply too, so story events (美容院に行った)
+        // fire, and hypotheticals ("いつか切りたい") don't. The keyword
+        // detector remains only as a fallback for turns the server did
+        // not judge (interrupter turns / older servers).
+        const intent =
+          data.lookChange !== undefined
+            ? data.lookChange
+            : detectLookChange(trimmed);
         if (intent && currentLook) {
           await triggerLookChange(currentCharacter, intent);
         }

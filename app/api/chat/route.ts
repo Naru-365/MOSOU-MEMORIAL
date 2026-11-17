@@ -15,8 +15,10 @@ import type {
   Emotion,
   Interrupter,
   InterrupterEmotion,
+  LookAttributes,
   Message,
 } from '@/lib/types';
+import type { LookChangeIntent } from '@/lib/looks';
 
 export const runtime = 'nodejs';
 
@@ -88,6 +90,42 @@ const INTERRUPTER_EMOTIONS: InterrupterEmotion[] = [
 const clamp = (n: number, min: number, max: number) =>
   Math.max(min, Math.min(max, n));
 
+/**
+ * Turn the model's raw lookChange judgment into a safe LookChangeIntent
+ * (改善6). Anything malformed degrades to null — a missed change is a
+ * shrug, a bogus one costs a paid image generation.
+ */
+function sanitizeLookChange(raw: {
+  shouldChange?: boolean;
+  label?: string;
+  instruction?: string;
+  hair?: string;
+  outfit?: string;
+  age?: string;
+  species?: string;
+  vibe?: string;
+} | undefined): LookChangeIntent | null {
+  if (!raw?.shouldChange) return null;
+  const instruction = raw.instruction?.trim();
+  if (!instruction) return null;
+  const clean = (s?: string) => {
+    const t = s?.trim();
+    return t ? t.slice(0, 60) : undefined;
+  };
+  const attributes: LookAttributes = {
+    hair: clean(raw.hair),
+    outfit: clean(raw.outfit),
+    age: clean(raw.age),
+    species: clean(raw.species),
+    vibe: clean(raw.vibe),
+  };
+  return {
+    label: clean(raw.label) ?? '姿が変わった',
+    instruction: instruction.slice(0, 400),
+    attributes,
+  };
+}
+
 function buildHeroineSystemPrompt(
   character: Character,
   affinity: number,
@@ -137,6 +175,13 @@ function buildHeroineSystemPrompt(
     `  - とても感動的/響いた発言なら +12 〜 +15`,
     `- jealousyChange: 嫉妬度の変化。-10 〜 +10 の整数。プレイヤーがあなたに親密に振る舞うほど周囲のライバルが嫉妬して上がる。`,
     `- emotion: あなたの今の表情。次のいずれか: neutral, happy, tsun, blush, angry, surprised, laugh, sad`,
+    `- lookChange: あなたの「姿」がこのやり取りの中で実際に変わる場合だけ shouldChange=true にする（改善6: LLM判定）`,
+    `  - 対象: 髪型・服装の変更、加齢/若返り、動物化などの変身。プレイヤーに頼まれた場合だけでなく、あなたのセリフの中で起きた出来事（美容院に行った、服を買った等）も含む`,
+    `  - 対象外: 「いつか切りたい」「昔は長かった」のような未来・過去・仮定の話、単なる話題としての言及、表情だけの変化`,
+    `  - label: 変化の短い日本語ラベル（例「ボブにした」「制服に着替えた」）`,
+    `  - instruction: 画像編集用の英語指示。顔と同一性は保つ前提で、変わる部分だけを具体的に（例 "cut her hair into a chin-length bob, keep her face and identity identical"）`,
+    `  - hair/outfit/age/species/vibe: 変わる属性だけ短く埋める。変わらない属性は空文字`,
+    `  - 姿が変わらない返答では shouldChange=false、それ以外は空でよい`,
   ].join('\n');
 }
 
@@ -213,6 +258,33 @@ const responseSchema = {
   },
   required: ['reply', 'affinityChange', 'jealousyChange', 'emotion'],
   propertyOrdering: ['reply', 'affinityChange', 'jealousyChange', 'emotion'],
+};
+
+/** Heroine playing schema: base + the LLM look-change judgment (改善6). */
+const heroineResponseSchema = {
+  type: Type.OBJECT,
+  properties: {
+    ...responseSchema.properties,
+    lookChange: {
+      type: Type.OBJECT,
+      properties: {
+        shouldChange: { type: Type.BOOLEAN },
+        label: { type: Type.STRING, description: '変化の短い日本語ラベル' },
+        instruction: {
+          type: Type.STRING,
+          description: '画像編集用の英語指示（同一性は保持）',
+        },
+        hair: { type: Type.STRING },
+        outfit: { type: Type.STRING },
+        age: { type: Type.STRING },
+        species: { type: Type.STRING },
+        vibe: { type: Type.STRING },
+      },
+      required: ['shouldChange'],
+    },
+  },
+  required: [...responseSchema.required, 'lookChange'],
+  propertyOrdering: [...responseSchema.propertyOrdering, 'lookChange'],
 };
 
 const onboardingResponseSchema = {
@@ -447,7 +519,7 @@ export async function POST(req: NextRequest) {
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
-          responseSchema,
+          responseSchema: interrupter ? responseSchema : heroineResponseSchema,
           temperature: 0.9,
           // Cap output so a model runaway can't produce a giant truncated JSON.
           maxOutputTokens: 1200,
@@ -467,6 +539,16 @@ export async function POST(req: NextRequest) {
         affinityChange: number;
         jealousyChange: number;
         emotion: string;
+        lookChange?: {
+          shouldChange?: boolean;
+          label?: string;
+          instruction?: string;
+          hair?: string;
+          outfit?: string;
+          age?: string;
+          species?: string;
+          vibe?: string;
+        };
       };
 
       const speaker: 'character' | 'interrupter' = interrupter
@@ -491,6 +573,9 @@ export async function POST(req: NextRequest) {
         affinityChange: clamp(Math.round(parsed.affinityChange ?? 0), -15, 15),
         jealousyChange: clamp(Math.round(parsed.jealousyChange ?? 0), -15, 15),
         emotion,
+        // Heroine turns carry an explicit judgment (intent or null);
+        // interrupter turns omit the field so the client can fall back.
+        ...(interrupter ? {} : { lookChange: sanitizeLookChange(parsed.lookChange) }),
       };
 
       return NextResponse.json(response);

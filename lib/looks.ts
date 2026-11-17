@@ -52,9 +52,11 @@ export function mergeLookAttributes(
 }
 
 // --- Look-change detection from free chat -------------------------------------
-// Lightweight, deterministic keyword triggers so an appearance change can fire
-// without an extra LLM call. The chat route can also override with richer
-// structured output later.
+// Primary detection is the chat model's own judgment, returned with the
+// reply (改善6: it sees the heroine's reply too, so story events fire and
+// hypotheticals don't). These deterministic keyword triggers remain as a
+// fallback for turns the server did not judge (interrupter turns, older
+// servers) — they only ever see the player's raw message.
 
 export interface LookChangeIntent {
   /** Human label for the new look, e.g. "ボブにした". */

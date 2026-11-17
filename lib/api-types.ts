@@ -10,6 +10,7 @@ import type {
   LookAttributes,
   Message,
 } from './types';
+import type { LookChangeIntent } from './looks';
 
 // ----- /api/chat request/response -----
 
@@ -56,6 +57,13 @@ export interface ChatApiResponse {
   emotion: Emotion | InterrupterEmotion;
   /** Present when the request was in onboarding phase. */
   onboarding?: OnboardingResult;
+  /**
+   * LLM-judged appearance change (改善6, playing phase, heroine turns).
+   * `undefined` = the server did not judge (older server / interrupter
+   * turn) and the client may fall back to keyword detection; `null` =
+   * judged, no change this turn.
+   */
+  lookChange?: LookChangeIntent | null;
 }
 
 export interface ChatApiError {
