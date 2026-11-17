@@ -12,7 +12,7 @@ export const runtime = 'nodejs';
 
 // Same chat model as /api/chat (single source of truth there; kept in sync
 // manually — summarization is a light task for the Flash tier).
-const CHAT_MODEL = 'gemini-3.5-flash';
+const CHAT_MODEL = 'gemini-4-hydrogen';
 
 const responseSchema = {
   type: Type.OBJECT,
