@@ -4,6 +4,7 @@ import { selectInterrupter } from '@/lib/chat-logic';
 import { buildOnboardingSystemPrompt } from '@/lib/onboarding-prompt';
 import { ONBOARDING_TARGET_RALLIES, resolveOnboardingStage } from '@/lib/onboarding';
 import { buildMemoryPromptSection } from '@/lib/memory';
+import { rateLimitGuard } from '@/lib/rate-limit';
 import type {
   ChatApiError,
   ChatApiRequest,
@@ -349,6 +350,9 @@ function messagesToContents(history: Message[], userMessage: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const limited = rateLimitGuard(req, 'chat', 30);
+  if (limited) return limited;
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return NextResponse.json<ChatApiError>(
@@ -384,6 +388,14 @@ export async function POST(req: NextRequest) {
   if (!character || !userMessage?.trim()) {
     return NextResponse.json<ChatApiError>(
       { error: 'character and userMessage are required', code: 'BAD_REQUEST' },
+      { status: 400 }
+    );
+  }
+
+  // Input cap (公開ガード): a chat message is a message, not an essay.
+  if (userMessage.length > 1000) {
+    return NextResponse.json<ChatApiError>(
+      { error: 'userMessage is too long (max 1000 characters)', code: 'BAD_REQUEST' },
       { status: 400 }
     );
   }

@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildBaseLookPrompt, buildEditPrompt, buildLookPromptForEmotion } from '@/lib/image-prompt';
+import { detectMinorStage, sanitizeOutfitForMinor } from '@/lib/age-guard';
+import { rateLimitGuard } from '@/lib/rate-limit';
 import type { GenerateLookError, GenerateLookRequest, GenerateLookResponse } from '@/lib/api-types';
-import type { Emotion } from '@/lib/types';
+import type { Emotion, LookAttributes } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
+  const limited = rateLimitGuard(req, 'generate-look', 6);
+  if (limited) return limited;
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json<GenerateLookError>(
@@ -24,7 +29,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { characterName, profile, attributes, changeInstruction, referenceImage } = body;
+  const { characterName, profile, changeInstruction, referenceImage } = body;
+
+  // Age-stage guard (公開ガード): a minor stage flips generation to a
+  // wholesome non-photorealistic illustration and sanitizes the outfit.
+  const minorSafe = detectMinorStage([
+    body.attributes?.age,
+    body.attributes?.extra,
+    changeInstruction,
+  ]);
+  const attributes: LookAttributes | undefined = minorSafe
+    ? {
+        ...body.attributes,
+        outfit: sanitizeOutfitForMinor(body.attributes?.outfit),
+      }
+    : body.attributes;
 
   if (!characterName?.trim()) {
     return NextResponse.json<GenerateLookError>(
@@ -46,7 +65,7 @@ export async function POST(req: NextRequest) {
   const size = body.size ?? '1024x1536';
   const quality = body.quality ?? 'low';
 
-  const base = buildBaseLookPrompt(characterName, profile, attributes);
+  const base = buildBaseLookPrompt(characterName, profile, attributes, { minorSafe });
 
   const images: Partial<Record<Emotion, string>> = {};
 
@@ -61,7 +80,7 @@ export async function POST(req: NextRequest) {
         const buf = Buffer.from(b64Input, 'base64');
         const form = new FormData();
         form.append('model', 'gpt-image-2');
-        form.append('prompt', buildEditPrompt(base, changeInstruction, emotion));
+        form.append('prompt', buildEditPrompt(base, changeInstruction, emotion, { minorSafe }));
         form.append('size', size);
         form.append('quality', quality);
         form.append('image[]', new Blob([buf], { type: 'image/png' }), 'reference.png');

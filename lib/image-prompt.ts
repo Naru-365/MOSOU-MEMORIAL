@@ -1,4 +1,5 @@
 import type { CharacterProfile, Emotion, LookAttributes } from '@/lib/types';
+import { MINOR_SAFE_NEGATIVE, MINOR_SAFE_TONE } from '@/lib/age-guard';
 
 export const EMOTION_SUFFIX: Record<Emotion, string> = {
   neutral: 'calm soft expression, looking at camera, mouth closed',
@@ -20,9 +21,15 @@ const NEGATIVE_GUIDANCE =
 export function buildBaseLookPrompt(
   characterName: string,
   profile?: CharacterProfile,
-  attributes?: LookAttributes
+  attributes?: LookAttributes,
+  opts?: { minorSafe?: boolean }
 ): string {
-  const parts: string[] = [`Photo of a Japanese character named ${characterName}.`];
+  const minorSafe = opts?.minorSafe ?? false;
+  const parts: string[] = [
+    minorSafe
+      ? `Illustration of a Japanese character named ${characterName}.`
+      : `Photo of a Japanese character named ${characterName}.`,
+  ];
 
   if (profile?.appearanceNotes) parts.push(profile.appearanceNotes);
   if (profile?.hairStyle) parts.push(`Hair: ${profile.hairStyle}.`);
@@ -37,7 +44,9 @@ export function buildBaseLookPrompt(
   if (attributes?.vibe) parts.push(`Atmosphere: ${attributes.vibe}.`);
   if (attributes?.extra) parts.push(attributes.extra);
 
-  parts.push(TONE_ANCHOR + NEGATIVE_GUIDANCE);
+  parts.push(
+    minorSafe ? MINOR_SAFE_TONE + MINOR_SAFE_NEGATIVE : TONE_ANCHOR + NEGATIVE_GUIDANCE
+  );
 
   return parts.join(' ');
 }
@@ -49,10 +58,14 @@ export function buildLookPromptForEmotion(base: string, emotion: Emotion): strin
 export function buildEditPrompt(
   base: string,
   changeInstruction: string | undefined,
-  emotion: Emotion
+  emotion: Emotion,
+  opts?: { minorSafe?: boolean }
 ): string {
   const changePart = changeInstruction ? ` ${changeInstruction.trim()}.` : '';
-  const raw = `same person, keep face and identity identical.${changePart} ${EMOTION_SUFFIX[emotion]}. ${TONE_ANCHOR}`;
+  const tone = opts?.minorSafe
+    ? `${MINOR_SAFE_TONE}.${MINOR_SAFE_NEGATIVE}`
+    : TONE_ANCHOR;
+  const raw = `same person, keep face and identity identical.${changePart} ${EMOTION_SUFFIX[emotion]}. ${tone}`;
   // Collapse doubled punctuation and extra spaces
   return raw.replace(/\.{2,}/g, '.').replace(/\s{2,}/g, ' ').trim();
 }

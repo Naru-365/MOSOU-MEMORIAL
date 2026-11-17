@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import { MAX_MEMORY_FACTS, MEMORY_SUMMARY_WINDOW } from '@/lib/memory';
+import { rateLimitGuard } from '@/lib/rate-limit';
 import type {
   SummarizeMemoryError,
   SummarizeMemoryRequest,
@@ -33,6 +34,9 @@ const responseSchema = {
 };
 
 export async function POST(req: NextRequest) {
+  const limited = rateLimitGuard(req, 'memory-summarize', 10);
+  if (limited) return limited;
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return NextResponse.json<SummarizeMemoryError>(
